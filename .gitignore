@@ -21,7 +21,8 @@ logs/
 *.db-shm
 *.parquet
 *.csv
-!tests/fixtures/**
+!tests/fixtures/*.csv
+!tests/fixtures/*.parquet
 
 # Credentials
 .env
