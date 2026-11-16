@@ -1,0 +1,30 @@
+# Python / environments
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+dist/
+build/
+*.egg-info/
+
+# Local research data (never commit): databases, raw downloads, logs, exports
+data/
+exports/
+logs/
+*.sqlite
+*.sqlite3
+*.db
+*.db-wal
+*.db-shm
+*.parquet
+*.csv
+!tests/fixtures/**
+
+# Credentials
+.env
+*.pem
+*.key
+configs/local*.toml
