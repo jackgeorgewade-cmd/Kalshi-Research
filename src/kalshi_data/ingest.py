@@ -44,6 +44,7 @@ from .errors import (
     BadRequestError,
     BudgetExhaustedError,
     ConfigError,
+    CursorRejectedError,
     KalshiDataError,
     NotFoundError,
     PaginationError,
@@ -509,16 +510,13 @@ class Ingestor:
         for i in range(idx, len(phases)):
             tier, ps, pe = phases[i]
             nxt = phase_ids[i + 1] if i + 1 < len(phases) else None
-            used_cursor = cursor if i == idx else None
             try:
                 self._trade_phase(run_id, uid, info.ticker, start, end, tier, ps, pe,
-                                  phase_ids[i], nxt, used_cursor)
-            except (PaginationError, BadRequestError) as exc:
-                # An expired/invalid cursor (or a cursor sequence we cannot trust):
-                # restart this bounded phase from its first page, once. A 400 on a
-                # request without a cursor is a genuine bad request and propagates.
-                if isinstance(exc, BadRequestError) and not used_cursor:
-                    raise
+                                  phase_ids[i], nxt, cursor if i == idx else None)
+            except PaginationError as exc:
+                # A cursor the API rejected, or a cursor sequence we cannot trust:
+                # restart this bounded phase from its first page, once. Rows already
+                # stored are de-duplicated by trade_id. A second failure propagates.
                 notes.append(f"cursor problem ({exc}); phase restarted from first page")
                 self._trade_phase(run_id, uid, info.ticker, start, end, tier, ps, pe,
                                   phase_ids[i], nxt, None)
@@ -553,61 +551,75 @@ class Ingestor:
         stored_first = unit["first_item_key"] if cursor else None
         pages = self.client.trade_pages(tier, ticker, to_unix(ps) - 1, to_unix(pe) + 1,
                                         start_cursor=cursor)
-        for page in pages:
-            if stored_first and page.items and page.items[0].get("trade_id") == stored_first \
-                    and page.index == 0:
-                log.info("cursor for %s was not honoured (restarted at first page)", ticker)
-            recs: list[Record] = []
-            issues: list[Issue] = []
-            for item in page.items:
-                rec, iss = parse_trade(item)
-                issues.extend(iss)
-                if isinstance(item, dict):
-                    issues.extend(self._unknown(run_id, "trade", item, TRADE_FIELDS))
-                if rec is not None and start <= rec["created_time"] < end:
-                    if rec["ticker"] != ticker:
-                        issues.append(Issue("error", "wrong_market",
-                                            f"trade for {rec['ticker']} returned for {ticker}",
-                                            rec["trade_id"], item))
-                        continue
-                    recs.append(rec)
-            done = page.next_cursor is None
-            first_key = (page.items[0].get("trade_id") if page.items and page.index == 0
-                         and cursor is None else None)
+        sent_cursor = cursor  # cursor carried by the next request
+        try:
+            for page in pages:
+                sent_cursor = page.next_cursor
+                self._trade_page(run_id, uid, ticker, start, end, tier, page, phase_id,
+                                 next_phase_id, cursor, stored_first)
+        except BadRequestError as exc:
+            if sent_cursor:
+                raise CursorRejectedError(f"cursor rejected: {exc}") from exc
+            raise
 
-            def write(recs: list[Record] = recs, issues: list[Issue] = issues,
-                      page: Page = page, done: bool = done,
-                      first_key: Any = first_key) -> None:
-                new, _same, _conf = self.store.insert_trades(
-                    recs, tier=tier.value, request_id=page.record.request_id,
-                    retrieved_at=page.record.received_at, parser_version=PARSER_VERSION,
-                    run_id=run_id)
-                self.store.add_issues(issues, run_id=run_id, request_id=page.record.request_id,
-                                      dataset="trade")
-                cur = self.store.get_unit(uid)
-                times = [r["created_time"] for r in recs]
-                earliest = min([iso(t) for t in times] + ([cur["earliest_obs"]]
-                                                          if cur["earliest_obs"] else []),
-                               default=None)
-                latest = max([iso(t) for t in times] + ([cur["latest_obs"]]
-                                                        if cur["latest_obs"] else []),
-                             default=None)
-                tiers = set(filter(None, cur["tiers_used"].split(","))) | {tier.value}
-                fields: dict[str, Any] = dict(
-                    pages=cur["pages"] + 1, rows_received=cur["rows_received"] + len(recs),
-                    rows_new=cur["rows_new"] + new, tiers_used=",".join(sorted(tiers)),
-                    earliest_obs=earliest, latest_obs=latest)
-                if first_key:
-                    fields["first_item_key"] = first_key
-                if done and next_phase_id:
-                    fields.update(phase=next_phase_id, cursor=None)
-                else:
-                    fields.update(phase=phase_id, cursor=page.next_cursor)
-                self.store.update_unit(uid, **fields)
+    def _trade_page(self, run_id: str, uid: int, ticker: str, start: datetime, end: datetime,
+                    tier: Tier, page: Page, phase_id: str, next_phase_id: str | None,
+                    cursor: str | None, stored_first: str | None) -> None:
+        """Normalize one page of trades and commit it with the checkpoint."""
+        if stored_first and page.items and page.items[0].get("trade_id") == stored_first \
+                and page.index == 0:
+            log.info("cursor for %s was not honoured (restarted at first page)", ticker)
+        recs: list[Record] = []
+        issues: list[Issue] = []
+        for item in page.items:
+            rec, iss = parse_trade(item)
+            issues.extend(iss)
+            if isinstance(item, dict):
+                issues.extend(self._unknown(run_id, "trade", item, TRADE_FIELDS))
+            if rec is not None and start <= rec["created_time"] < end:
+                if rec["ticker"] != ticker:
+                    issues.append(Issue("error", "wrong_market",
+                                        f"trade for {rec['ticker']} returned for {ticker}",
+                                        rec["trade_id"], item))
+                    continue
+                recs.append(rec)
+        done = page.next_cursor is None
+        first_key = (page.items[0].get("trade_id") if page.items and page.index == 0
+                     and cursor is None else None)
 
-            self._persist(run_id, page.record, tier.value, len(page.items), write)
-            self.progress("page", {"dataset": "trades", "ticker": ticker,
-                                   "rows": len(recs), "tier": tier.value})
+        def write(recs: list[Record] = recs, issues: list[Issue] = issues,
+                  page: Page = page, done: bool = done,
+                  first_key: Any = first_key) -> None:
+            new, _same, _conf = self.store.insert_trades(
+                recs, tier=tier.value, request_id=page.record.request_id,
+                retrieved_at=page.record.received_at, parser_version=PARSER_VERSION,
+                run_id=run_id)
+            self.store.add_issues(issues, run_id=run_id, request_id=page.record.request_id,
+                                  dataset="trade")
+            cur = self.store.get_unit(uid)
+            times = [r["created_time"] for r in recs]
+            earliest = min([iso(t) for t in times] + ([cur["earliest_obs"]]
+                                                      if cur["earliest_obs"] else []),
+                           default=None)
+            latest = max([iso(t) for t in times] + ([cur["latest_obs"]]
+                                                    if cur["latest_obs"] else []),
+                         default=None)
+            tiers = set(filter(None, cur["tiers_used"].split(","))) | {tier.value}
+            fields: dict[str, Any] = dict(
+                pages=cur["pages"] + 1, rows_received=cur["rows_received"] + len(recs),
+                rows_new=cur["rows_new"] + new, tiers_used=",".join(sorted(tiers)),
+                earliest_obs=earliest, latest_obs=latest)
+            if first_key:
+                fields["first_item_key"] = first_key
+            if done and next_phase_id:
+                fields.update(phase=next_phase_id, cursor=None)
+            else:
+                fields.update(phase=phase_id, cursor=page.next_cursor)
+            self.store.update_unit(uid, **fields)
+
+        self._persist(run_id, page.record, tier.value, len(page.items), write)
+        self.progress("page", {"dataset": "trades", "ticker": ticker,
+                               "rows": len(recs), "tier": tier.value})
 
     # ------------------------------------------------------------ candles
     def _run_candle_unit(self, run_id: str, uid: int, info: MarketInfo) -> None:
@@ -620,13 +632,16 @@ class Ingestor:
             self.store.update_unit(uid, status="running", attempts=unit["attempts"] + 1,
                                    error=None)
         cutoff = self.current_cutoff(run_id)
-        # Candles follow the market's archival status, not the candle times.
-        # The tier where the market metadata was found is the direct evidence;
-        # the cutoff comparison is a cross-check.
-        tier = info.found_tier
+        # Candles follow the market's archival status (documented rule: markets
+        # that settled before market_settled_ts are served by the historical
+        # candle endpoint), never the candle timestamps. We do not use "the tier
+        # where metadata was found" as the rule: we observed markets settled just
+        # before the cutoff being served by BOTH tiers during the handoff.
+        tier = market_tier(info.settled, cutoff)
         notes = []
-        if market_tier(info.settled, cutoff) is not tier:
-            notes.append(f"metadata found in {tier.value} tier but cutoff suggests otherwise")
+        if info.found_tier is not tier:
+            notes.append(f"metadata served by {info.found_tier.value} tier; candles routed to "
+                         f"{tier.value} by settlement time")
         s_ts, e_ts = to_unix(start), to_unix(end)
         record: ResponseRecord | None = None
         for attempt in range(2):

@@ -41,7 +41,7 @@ from .ingest import Ingestor, JobRequest, ProgressFn, RunResult
 from .lock import WriterLock
 from .normalize import Record, parse_candle, parse_market, parse_orderbook, parse_trade
 from .rawstore import RawStore
-from .routing import Cutoff, candle_cells, split_trade_window
+from .routing import Cutoff, candle_cells, market_tier, split_trade_window
 from .storage import Store
 from .timeutil import parse_api_time, parse_user_time, to_unix, utcnow, validate_range
 
@@ -171,7 +171,8 @@ class KalshiData:
         if interval not in VALID_INTERVALS:
             raise ConfigError(f"interval must be one of {VALID_INTERVALS}")
         s, e = _range(start, end)
-        rec, tier = self.market(ticker)
+        rec, _found_in = self.market(ticker)
+        tier = market_tier(rec["settlement_ts"], self.cutoff())
         series = None
         if tier is Tier.LIVE:
             ev = self.client.event(rec["event_ticker"]).json()

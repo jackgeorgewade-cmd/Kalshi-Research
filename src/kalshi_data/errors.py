@@ -100,5 +100,10 @@ class PaginationError(KalshiDataError):
     """
 
 
+class CursorRejectedError(PaginationError):
+    """The API rejected (HTTP 400) a request that carried a pagination cursor,
+    e.g. an expired cursor. The bounded unit is restarted from its first page."""
+
+
 class ResponseFormatError(KalshiDataError):
     """A successful response did not have the documented envelope shape."""
