@@ -17,8 +17,7 @@ def test_date_only_is_midnight_utc() -> None:
 
 
 def test_offset_converted_to_utc() -> None:
-    assert parse_user_time("2025-01-01T09:30:00-04:00") == datetime(2025, 1, 1, 13, 30,
-                                                                    tzinfo=UTC)
+    assert parse_user_time("2025-01-01T09:30:00-04:00") == datetime(2025, 1, 1, 13, 30, tzinfo=UTC)
     assert parse_user_time("2025-01-01T13:30:00Z").tzinfo == UTC
 
 
@@ -33,7 +32,8 @@ def test_naive_datetime_rejected_aware_accepted() -> None:
         parse_user_time(datetime(2025, 1, 1))
     eastern = timezone(timedelta(hours=-5))
     assert parse_user_time(datetime(2025, 1, 1, tzinfo=eastern)) == datetime(
-        2025, 1, 1, 5, tzinfo=UTC)
+        2025, 1, 1, 5, tzinfo=UTC
+    )
 
 
 def test_api_time_microseconds_and_iso_roundtrip() -> None:

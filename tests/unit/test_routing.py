@@ -41,8 +41,11 @@ def test_trade_window_split_at_cutoff() -> None:
 
 def test_trade_cells_are_calendar_months_clipped() -> None:
     cells = trade_cells(d(2025, 1, 15), d(2025, 3, 2))
-    assert cells == [(d(2025, 1, 15), d(2025, 2, 1)), (d(2025, 2, 1), d(2025, 3, 1)),
-                     (d(2025, 3, 1), d(2025, 3, 2))]
+    assert cells == [
+        (d(2025, 1, 15), d(2025, 2, 1)),
+        (d(2025, 2, 1), d(2025, 3, 1)),
+        (d(2025, 3, 1), d(2025, 3, 2)),
+    ]
     assert trade_cells(d(2025, 12, 5), d(2026, 1, 5))[1][0] == d(2026, 1, 1)
 
 
@@ -66,7 +69,11 @@ def test_candle_cells_deterministic_epoch_alignment() -> None:
 def test_clip_to_market_life() -> None:
     created, settled = d(2025, 3, 1), d(2025, 3, 10)
     assert clip_to_market_life(d(2025, 1, 1), d(2026, 1, 1), created, settled) == (
-        created, settled + timedelta(days=1))
+        created,
+        settled + timedelta(days=1),
+    )
     assert clip_to_market_life(d(2024, 1, 1), d(2024, 2, 1), created, settled) is None
     assert clip_to_market_life(d(2025, 1, 1), d(2025, 2, 1), None, None) == (
-        d(2025, 1, 1), d(2025, 2, 1))
+        d(2025, 1, 1),
+        d(2025, 2, 1),
+    )

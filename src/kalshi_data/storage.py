@@ -249,32 +249,104 @@ CREATE INDEX IF NOT EXISTS idx_issues_run ON validation_issues(run_id);
 """
 
 MARKET_COLUMNS = (
-    "ticker", "event_ticker", "market_type", "title", "subtitle", "yes_sub_title",
-    "no_sub_title", "status", "result", "strike_type", "floor_strike", "cap_strike",
-    "functional_strike", "custom_strike", "rules_primary", "rules_secondary",
-    "price_level_structure", "price_ranges", "expiration_value", "mve_collection_ticker",
-    "settlement_bounds_type", "early_close_condition", "created_time", "open_time",
-    "close_time", "expected_expiration_time", "latest_expiration_time", "expiration_time",
-    "settlement_ts", "occurrence_datetime", "updated_time", "fee_waiver_expiration_time",
-    "notional_value_dollars", "settlement_value_dollars", "settlement_floor_dollars",
-    "last_price_dollars", "previous_price_dollars", "yes_bid_dollars", "yes_ask_dollars",
-    "no_bid_dollars", "no_ask_dollars", "previous_yes_bid_dollars", "previous_yes_ask_dollars",
-    "yes_bid_size_fp", "yes_ask_size_fp", "volume_fp", "volume_24h_fp", "open_interest_fp",
+    "ticker",
+    "event_ticker",
+    "market_type",
+    "title",
+    "subtitle",
+    "yes_sub_title",
+    "no_sub_title",
+    "status",
+    "result",
+    "strike_type",
+    "floor_strike",
+    "cap_strike",
+    "functional_strike",
+    "custom_strike",
+    "rules_primary",
+    "rules_secondary",
+    "price_level_structure",
+    "price_ranges",
+    "expiration_value",
+    "mve_collection_ticker",
+    "settlement_bounds_type",
+    "early_close_condition",
+    "created_time",
+    "open_time",
+    "close_time",
+    "expected_expiration_time",
+    "latest_expiration_time",
+    "expiration_time",
+    "settlement_ts",
+    "occurrence_datetime",
+    "updated_time",
+    "fee_waiver_expiration_time",
+    "notional_value_dollars",
+    "settlement_value_dollars",
+    "settlement_floor_dollars",
+    "last_price_dollars",
+    "previous_price_dollars",
+    "yes_bid_dollars",
+    "yes_ask_dollars",
+    "no_bid_dollars",
+    "no_ask_dollars",
+    "previous_yes_bid_dollars",
+    "previous_yes_ask_dollars",
+    "yes_bid_size_fp",
+    "yes_ask_size_fp",
+    "volume_fp",
+    "volume_24h_fp",
+    "open_interest_fp",
     "can_close_early",
 )
 CANDLE_VALUE_COLUMNS = (
-    "trade_open", "trade_high", "trade_low", "trade_close", "trade_mean", "trade_previous",
-    "trade_min", "trade_max", "yes_bid_open", "yes_bid_high", "yes_bid_low", "yes_bid_close",
-    "yes_ask_open", "yes_ask_high", "yes_ask_low", "yes_ask_close", "volume", "open_interest",
+    "trade_open",
+    "trade_high",
+    "trade_low",
+    "trade_close",
+    "trade_mean",
+    "trade_previous",
+    "trade_min",
+    "trade_max",
+    "yes_bid_open",
+    "yes_bid_high",
+    "yes_bid_low",
+    "yes_bid_close",
+    "yes_ask_open",
+    "yes_ask_high",
+    "yes_ask_low",
+    "yes_ask_close",
+    "volume",
+    "open_interest",
 )
-TRADE_COLUMNS = ("trade_id", "ticker", "created_time", "count", "yes_price", "no_price",
-                 "taker_outcome_side", "taker_book_side", "taker_side_deprecated",
-                 "is_block_trade")
+TRADE_COLUMNS = (
+    "trade_id",
+    "ticker",
+    "created_time",
+    "count",
+    "yes_price",
+    "no_price",
+    "taker_outcome_side",
+    "taker_book_side",
+    "taker_side_deprecated",
+    "is_block_trade",
+)
 # Volatile quote fields excluded when deciding whether market metadata changed.
-MARKET_VOLATILE = ("last_price_dollars", "previous_price_dollars", "yes_bid_dollars",
-                   "yes_ask_dollars", "no_bid_dollars", "no_ask_dollars",
-                   "previous_yes_bid_dollars", "previous_yes_ask_dollars", "yes_bid_size_fp",
-                   "yes_ask_size_fp", "volume_fp", "volume_24h_fp", "open_interest_fp")
+MARKET_VOLATILE = (
+    "last_price_dollars",
+    "previous_price_dollars",
+    "yes_bid_dollars",
+    "yes_ask_dollars",
+    "no_bid_dollars",
+    "no_ask_dollars",
+    "previous_yes_bid_dollars",
+    "previous_yes_ask_dollars",
+    "yes_bid_size_fp",
+    "yes_ask_size_fp",
+    "volume_fp",
+    "volume_24h_fp",
+    "open_interest_fp",
+)
 
 
 def to_sql(value: Any) -> Any:
@@ -323,7 +395,8 @@ class Store:
         version = self.conn.execute("PRAGMA user_version").fetchone()[0]
         if version > SCHEMA_VERSION:
             raise RuntimeError(
-                f"Database schema v{version} is newer than this code (v{SCHEMA_VERSION})")
+                f"Database schema v{version} is newer than this code (v{SCHEMA_VERSION})"
+            )
         if version < 1:
             self.conn.executescript(SCHEMA)
             self.conn.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
@@ -340,90 +413,182 @@ class Store:
         self.conn.execute("COMMIT")
 
     # ------------------------------------------------------------------ runs
-    def create_run(self, run_id: str, kind: str, spec: dict[str, Any],
-                   settings: dict[str, Any]) -> None:
+    def create_run(
+        self, run_id: str, kind: str, spec: dict[str, Any], settings: dict[str, Any]
+    ) -> None:
         now = iso(utcnow())
         self.conn.execute(
             "INSERT INTO runs(run_id, kind, status, created_at, updated_at, spec_json, "
             "settings_json) VALUES (?,?,?,?,?,?,?)",
-            (run_id, kind, "running", now, now, dumps_exact(spec, sort_keys=True),
-             dumps_exact(settings, sort_keys=True)),
+            (
+                run_id,
+                kind,
+                "running",
+                now,
+                now,
+                dumps_exact(spec, sort_keys=True),
+                dumps_exact(settings, sort_keys=True),
+            ),
         )
 
     def set_run_cutoff(self, run_id: str, cutoff: dict[str, Any], request_id: str) -> None:
         self.conn.execute(
             "UPDATE runs SET cutoff_json=?, cutoff_request_id=?, updated_at=? WHERE run_id=?",
-            (json.dumps(cutoff, sort_keys=True), request_id, iso(utcnow()), run_id))
+            (json.dumps(cutoff, sort_keys=True), request_id, iso(utcnow()), run_id),
+        )
 
-    def finish_run(self, run_id: str, status: str, requests_used: int,
-                   message: str | None = None) -> None:
+    def finish_run(
+        self, run_id: str, status: str, requests_used: int, message: str | None = None
+    ) -> None:
         self.conn.execute(
             "UPDATE runs SET status=?, requests_used=requests_used+?, message=?, updated_at=? "
-            "WHERE run_id=?", (status, requests_used, message, iso(utcnow()), run_id))
+            "WHERE run_id=?",
+            (status, requests_used, message, iso(utcnow()), run_id),
+        )
 
     def get_run(self, run_id: str) -> sqlite3.Row | None:
         row: sqlite3.Row | None = self.conn.execute(
-            "SELECT * FROM runs WHERE run_id=?", (run_id,)).fetchone()
+            "SELECT * FROM runs WHERE run_id=?", (run_id,)
+        ).fetchone()
         return row
 
     def list_runs(self, limit: int = 50) -> list[sqlite3.Row]:
-        return list(self.conn.execute(
-            "SELECT * FROM runs ORDER BY created_at DESC LIMIT ?", (limit,)))
+        return list(
+            self.conn.execute("SELECT * FROM runs ORDER BY created_at DESC LIMIT ?", (limit,))
+        )
 
     # -------------------------------------------------------------- requests
-    def insert_request(self, *, request_id: str, run_id: str | None, path: str,
-                       params: dict[str, str], url: str | None, status: int | None,
-                       requested_at: datetime | None, received_at: datetime | None,
-                       attempts: int | None, tier: str | None, raw_path: str | None,
-                       sha256: str | None, body_bytes: int | None, parser_version: str | None,
-                       item_count: int | None, error: str | None = None) -> None:
+    def insert_request(
+        self,
+        *,
+        request_id: str,
+        run_id: str | None,
+        path: str,
+        params: dict[str, str],
+        url: str | None,
+        status: int | None,
+        requested_at: datetime | None,
+        received_at: datetime | None,
+        attempts: int | None,
+        tier: str | None,
+        raw_path: str | None,
+        sha256: str | None,
+        body_bytes: int | None,
+        parser_version: str | None,
+        item_count: int | None,
+        error: str | None = None,
+    ) -> None:
         self.conn.execute(
             "INSERT OR REPLACE INTO requests VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-            (request_id, run_id, path, json.dumps(params, sort_keys=True), url, status,
-             iso(requested_at), iso(received_at), attempts, tier, raw_path, sha256,
-             body_bytes, parser_version, item_count, error))
+            (
+                request_id,
+                run_id,
+                path,
+                json.dumps(params, sort_keys=True),
+                url,
+                status,
+                iso(requested_at),
+                iso(received_at),
+                attempts,
+                tier,
+                raw_path,
+                sha256,
+                body_bytes,
+                parser_version,
+                item_count,
+                error,
+            ),
+        )
 
     def raw_paths(self) -> list[str]:
-        return [r[0] for r in self.conn.execute(
-            "SELECT raw_path FROM requests WHERE raw_path IS NOT NULL")]
+        return [
+            r[0]
+            for r in self.conn.execute("SELECT raw_path FROM requests WHERE raw_path IS NOT NULL")
+        ]
 
     # ---------------------------------------------------------------- issues
-    def add_issues(self, issues: Sequence[Issue], *, run_id: str | None,
-                   request_id: str | None, dataset: str) -> None:
+    def add_issues(
+        self, issues: Sequence[Issue], *, run_id: str | None, request_id: str | None, dataset: str
+    ) -> None:
         now = iso(utcnow())
         self.conn.executemany(
             "INSERT INTO validation_issues(run_id, request_id, dataset, record_key, severity, "
             "code, message, raw_json, created_at) VALUES (?,?,?,?,?,?,?,?,?)",
-            [(run_id, request_id, dataset, i.record_key, i.severity, i.code, i.message,
-              None if i.raw is None else raw_json(i.raw), now) for i in issues])
+            [
+                (
+                    run_id,
+                    request_id,
+                    dataset,
+                    i.record_key,
+                    i.severity,
+                    i.code,
+                    i.message,
+                    None if i.raw is None else raw_json(i.raw),
+                    now,
+                )
+                for i in issues
+            ],
+        )
 
     # -------------------------------------------------------------- metadata
     def upsert_series(self, rec: Record, request_id: str, retrieved_at: datetime) -> None:
-        cols = ("ticker", "title", "category", "categories", "tags", "frequency",
-                "settlement_sources", "contract_url", "contract_terms_url", "last_updated_ts")
+        cols = (
+            "ticker",
+            "title",
+            "category",
+            "categories",
+            "tags",
+            "frequency",
+            "settlement_sources",
+            "contract_url",
+            "contract_terms_url",
+            "last_updated_ts",
+        )
         vals = [to_sql(rec[c]) for c in cols] + [iso(retrieved_at), request_id]
         self.conn.execute(
             f"INSERT OR REPLACE INTO series({', '.join(cols)}, retrieved_at, source_request_id)"
-            f" VALUES ({', '.join('?' * (len(cols) + 2))})", vals)
+            f" VALUES ({', '.join('?' * (len(cols) + 2))})",
+            vals,
+        )
 
     def upsert_event(self, rec: Record, request_id: str, retrieved_at: datetime) -> None:
-        cols = ("event_ticker", "series_ticker", "title", "sub_title", "category",
-                "strike_date", "strike_period", "mutually_exclusive", "collateral_return_type",
-                "settlement_sources", "last_updated_ts")
+        cols = (
+            "event_ticker",
+            "series_ticker",
+            "title",
+            "sub_title",
+            "category",
+            "strike_date",
+            "strike_period",
+            "mutually_exclusive",
+            "collateral_return_type",
+            "settlement_sources",
+            "last_updated_ts",
+        )
         vals = [to_sql(rec[c]) for c in cols] + [iso(retrieved_at), request_id]
         self.conn.execute(
             f"INSERT OR REPLACE INTO events({', '.join(cols)}, retrieved_at, source_request_id)"
-            f" VALUES ({', '.join('?' * (len(cols) + 2))})", vals)
+            f" VALUES ({', '.join('?' * (len(cols) + 2))})",
+            vals,
+        )
 
-    def upsert_market(self, rec: Record, *, tier: str, request_id: str,
-                      retrieved_at: datetime, always_snapshot: bool = False) -> bool:
+    def upsert_market(
+        self,
+        rec: Record,
+        *,
+        tier: str,
+        request_id: str,
+        retrieved_at: datetime,
+        always_snapshot: bool = False,
+    ) -> bool:
         """Store the latest market metadata; append a snapshot if the
         non-volatile content changed (or always, for quote polling).
         Returns True if a snapshot row was added."""
         h = content_hash(rec, exclude=MARKET_VOLATILE)
         prev = self.conn.execute(
             "SELECT content_hash, first_seen_at, retrieved_at FROM markets WHERE ticker=?",
-            (rec["ticker"],)).fetchone()
+            (rec["ticker"],),
+        ).fetchone()
         if prev is not None and prev["retrieved_at"] > iso(retrieved_at):
             return False  # never let an older observation overwrite a newer one
         first_seen = prev["first_seen_at"] if prev else iso(retrieved_at)
@@ -432,30 +597,48 @@ class Store:
             f"INSERT OR REPLACE INTO markets({', '.join(MARKET_COLUMNS)}, tier, content_hash, "
             f"first_seen_at, retrieved_at, source_request_id) VALUES "
             f"({', '.join('?' * (len(MARKET_COLUMNS) + 5))})",
-            [*vals, tier, h, first_seen, iso(retrieved_at), request_id])
+            [*vals, tier, h, first_seen, iso(retrieved_at), request_id],
+        )
         if always_snapshot or prev is None or prev["content_hash"] != h:
             self.conn.execute(
                 "INSERT OR IGNORE INTO market_snapshots VALUES (?,?,?,?,?,?)",
-                (rec["ticker"], iso(retrieved_at), tier, h, request_id,
-                 dumps_exact({k: to_sql(v) for k, v in rec.items()}, sort_keys=True)))
+                (
+                    rec["ticker"],
+                    iso(retrieved_at),
+                    tier,
+                    h,
+                    request_id,
+                    dumps_exact({k: to_sql(v) for k, v in rec.items()}, sort_keys=True),
+                ),
+            )
             return True
         return False
 
     def get_market(self, ticker: str) -> sqlite3.Row | None:
         row: sqlite3.Row | None = self.conn.execute(
             "SELECT m.*, e.series_ticker FROM markets m LEFT JOIN events e "
-            "ON e.event_ticker = m.event_ticker WHERE m.ticker=?", (ticker,)).fetchone()
+            "ON e.event_ticker = m.event_ticker WHERE m.ticker=?",
+            (ticker,),
+        ).fetchone()
         return row
 
     def get_event(self, event_ticker: str) -> sqlite3.Row | None:
         row: sqlite3.Row | None = self.conn.execute(
-            "SELECT * FROM events WHERE event_ticker=?", (event_ticker,)).fetchone()
+            "SELECT * FROM events WHERE event_ticker=?", (event_ticker,)
+        ).fetchone()
         return row
 
     # ---------------------------------------------------------------- trades
-    def insert_trades(self, recs: Sequence[Record], *, tier: str, request_id: str,
-                      retrieved_at: datetime, parser_version: str,
-                      run_id: str | None) -> tuple[int, int, int]:
+    def insert_trades(
+        self,
+        recs: Sequence[Record],
+        *,
+        tier: str,
+        request_id: str,
+        retrieved_at: datetime,
+        parser_version: str,
+        run_id: str | None,
+    ) -> tuple[int, int, int]:
         """Insert trades idempotently. Returns (new, duplicate_same, conflicting)."""
         new = same = conflict = 0
         conflicts: list[Issue] = []
@@ -463,31 +646,51 @@ class Store:
             h = content_hash(rec)
             row = self.conn.execute(
                 "SELECT content_hash, source_request_id FROM trades WHERE trade_id=?",
-                (rec["trade_id"],)).fetchone()
+                (rec["trade_id"],),
+            ).fetchone()
             if row is None:
                 self.conn.execute(
                     f"INSERT INTO trades({', '.join(TRADE_COLUMNS)}, tier, content_hash, "
                     f"retrieved_at, source_request_id, parser_version) VALUES "
                     f"({', '.join('?' * (len(TRADE_COLUMNS) + 5))})",
-                    [*(to_sql(rec[c]) for c in TRADE_COLUMNS), tier, h, iso(retrieved_at),
-                     request_id, parser_version])
+                    [
+                        *(to_sql(rec[c]) for c in TRADE_COLUMNS),
+                        tier,
+                        h,
+                        iso(retrieved_at),
+                        request_id,
+                        parser_version,
+                    ],
+                )
                 new += 1
             elif row["content_hash"] == h:
                 same += 1
             else:
                 conflict += 1
-                conflicts.append(Issue(
-                    "warning", "source_conflict",
-                    f"trade {rec['trade_id']} differs from stored version (request "
-                    f"{row['source_request_id']}); first-seen version kept",
-                    rec["trade_id"], {k: to_sql(v) for k, v in rec.items()}))
+                conflicts.append(
+                    Issue(
+                        "warning",
+                        "source_conflict",
+                        f"trade {rec['trade_id']} differs from stored version (request "
+                        f"{row['source_request_id']}); first-seen version kept",
+                        rec["trade_id"],
+                        {k: to_sql(v) for k, v in rec.items()},
+                    )
+                )
         if conflicts:
             self.add_issues(conflicts, run_id=run_id, request_id=request_id, dataset="trade")
         return new, same, conflict
 
     # --------------------------------------------------------------- candles
-    def upsert_candles(self, recs: Sequence[Record], *, tier: str, request_id: str,
-                       retrieved_at: datetime, parser_version: str) -> tuple[int, int, int]:
+    def upsert_candles(
+        self,
+        recs: Sequence[Record],
+        *,
+        tier: str,
+        request_id: str,
+        retrieved_at: datetime,
+        parser_version: str,
+    ) -> tuple[int, int, int]:
         """Insert or revise candles. Returns (new, revised, unchanged)."""
         new = revised = same = 0
         now_ts = retrieved_at.timestamp()
@@ -495,8 +698,9 @@ class Store:
             h = content_hash(rec, exclude=("source_schema",))
             key = (rec["ticker"], rec["interval_minutes"], rec["end_period_ts"])
             row = self.conn.execute(
-                "SELECT * FROM candles WHERE ticker=? AND interval_minutes=? AND "
-                "end_period_ts=?", key).fetchone()
+                "SELECT * FROM candles WHERE ticker=? AND interval_minutes=? AND end_period_ts=?",
+                key,
+            ).fetchone()
             complete = int(rec["end_period_ts"] <= now_ts)
             values = [to_sql(rec[c]) for c in CANDLE_VALUE_COLUMNS]
             if row is None:
@@ -506,38 +710,79 @@ class Store:
                     f"period_complete, revision, content_hash, retrieved_at, source_request_id, "
                     f"parser_version) VALUES "
                     f"({', '.join('?' * (len(CANDLE_VALUE_COLUMNS) + 12))})",
-                    [*key, iso(rec["end_period_time"]), *values, rec["source_schema"], tier,
-                     complete, 1, h, iso(retrieved_at), request_id, parser_version])
+                    [
+                        *key,
+                        iso(rec["end_period_time"]),
+                        *values,
+                        rec["source_schema"],
+                        tier,
+                        complete,
+                        1,
+                        h,
+                        iso(retrieved_at),
+                        request_id,
+                        parser_version,
+                    ],
+                )
                 new += 1
             elif row["content_hash"] == h:
                 same += 1
                 if complete and not row["period_complete"]:
                     self.conn.execute(
                         "UPDATE candles SET period_complete=1 WHERE ticker=? AND "
-                        "interval_minutes=? AND end_period_ts=?", key)
+                        "interval_minutes=? AND end_period_ts=?",
+                        key,
+                    )
             elif row["retrieved_at"] > iso(retrieved_at):
                 same += 1  # stale observation; keep the newer stored version
             else:
                 old = {k: row[k] for k in row.keys()}  # noqa: SIM118 - sqlite3.Row
                 self.conn.execute(
                     "INSERT INTO candle_revisions VALUES (?,?,?,?,?,?,?,?,?)",
-                    (*key, row["revision"], row["content_hash"], json.dumps(old),
-                     row["retrieved_at"], row["source_request_id"], iso(retrieved_at)))
+                    (
+                        *key,
+                        row["revision"],
+                        row["content_hash"],
+                        json.dumps(old),
+                        row["retrieved_at"],
+                        row["source_request_id"],
+                        iso(retrieved_at),
+                    ),
+                )
                 sets = ", ".join(f"{c}=?" for c in CANDLE_VALUE_COLUMNS)
                 self.conn.execute(
                     f"UPDATE candles SET {sets}, source_schema=?, tier=?, period_complete=?, "
                     f"revision=revision+1, content_hash=?, retrieved_at=?, source_request_id=?, "
                     f"parser_version=? WHERE ticker=? AND interval_minutes=? AND end_period_ts=?",
-                    [*values, rec["source_schema"], tier, complete, h, iso(retrieved_at),
-                     request_id, parser_version, *key])
+                    [
+                        *values,
+                        rec["source_schema"],
+                        tier,
+                        complete,
+                        h,
+                        iso(retrieved_at),
+                        request_id,
+                        parser_version,
+                        *key,
+                    ],
+                )
                 revised += 1
         return new, revised, same
 
     # ------------------------------------------------------------- orderbook
-    def insert_orderbook(self, *, snapshot_id: str, run_id: str | None, ticker: str,
-                         requested_at: datetime, received_at: datetime,
-                         server_date: str | None, depth: int | None,
-                         levels: Sequence[Record], notional: Decimal | None) -> Record:
+    def insert_orderbook(
+        self,
+        *,
+        snapshot_id: str,
+        run_id: str | None,
+        ticker: str,
+        requested_at: datetime,
+        received_at: datetime,
+        server_date: str | None,
+        depth: int | None,
+        levels: Sequence[Record],
+        notional: Decimal | None,
+    ) -> Record:
         """Store one snapshot; returns the summary row (with derived fields)."""
         yes = [lv for lv in levels if lv["side"] == "yes"]
         no = [lv for lv in levels if lv["side"] == "no"]
@@ -550,57 +795,95 @@ class Store:
         d_no_ask = None if best_yes is None else one - best_yes
         spread = None if d_yes_ask is None or best_yes is None else d_yes_ask - best_yes
         summary: Record = {
-            "snapshot_id": snapshot_id, "run_id": run_id, "ticker": ticker,
-            "requested_at": requested_at, "received_at": received_at,
-            "server_date": server_date, "depth_requested": depth,
-            "yes_levels": len(yes), "no_levels": len(no),
-            "best_yes_bid": best_yes, "best_no_bid": best_no,
-            "derived_yes_ask": d_yes_ask, "derived_no_ask": d_no_ask,
-            "derived_yes_spread": spread, "source_request_id": snapshot_id,
+            "snapshot_id": snapshot_id,
+            "run_id": run_id,
+            "ticker": ticker,
+            "requested_at": requested_at,
+            "received_at": received_at,
+            "server_date": server_date,
+            "depth_requested": depth,
+            "yes_levels": len(yes),
+            "no_levels": len(no),
+            "best_yes_bid": best_yes,
+            "best_no_bid": best_no,
+            "derived_yes_ask": d_yes_ask,
+            "derived_no_ask": d_no_ask,
+            "derived_yes_spread": spread,
+            "source_request_id": snapshot_id,
         }
         cols = list(summary)
         self.conn.execute(
             f"INSERT OR IGNORE INTO orderbook_snapshots({', '.join(cols)}) VALUES "
-            f"({', '.join('?' * len(cols))})", [to_sql(summary[c]) for c in cols])
+            f"({', '.join('?' * len(cols))})",
+            [to_sql(summary[c]) for c in cols],
+        )
         self.conn.executemany(
             "INSERT OR IGNORE INTO orderbook_levels VALUES (?,?,?,?,?)",
-            [(snapshot_id, lv["side"], lv["rank"], str(lv["price"]), str(lv["quantity"]))
-             for lv in levels])
+            [
+                (snapshot_id, lv["side"], lv["rank"], str(lv["price"]), str(lv["quantity"]))
+                for lv in levels
+            ],
+        )
         return summary
 
     # ------------------------------------------------------------ work units
-    def ensure_unit(self, run_id: str, unit_key: str, dataset: str, ticker: str,
-                    interval: int | None, start: datetime, end: datetime) -> sqlite3.Row:
+    def ensure_unit(
+        self,
+        run_id: str,
+        unit_key: str,
+        dataset: str,
+        ticker: str,
+        interval: int | None,
+        start: datetime,
+        end: datetime,
+    ) -> sqlite3.Row:
         now = iso(utcnow())
         self.conn.execute(
             "INSERT OR IGNORE INTO work_units(run_id, unit_key, dataset, ticker, "
             "interval_minutes, window_start, window_end, status, created_at, updated_at) "
             "VALUES (?,?,?,?,?,?,?,?,?,?)",
-            (run_id, unit_key, dataset, ticker, interval, iso(start), iso(end), "pending",
-             now, now))
+            (
+                run_id,
+                unit_key,
+                dataset,
+                ticker,
+                interval,
+                iso(start),
+                iso(end),
+                "pending",
+                now,
+                now,
+            ),
+        )
         row: sqlite3.Row = self.conn.execute(
-            "SELECT * FROM work_units WHERE run_id=? AND unit_key=?",
-            (run_id, unit_key)).fetchone()
+            "SELECT * FROM work_units WHERE run_id=? AND unit_key=?", (run_id, unit_key)
+        ).fetchone()
         return row
 
     def update_unit(self, unit_id: int, **fields: Any) -> None:
         fields["updated_at"] = iso(utcnow())
         sets = ", ".join(f"{k}=?" for k in fields)
-        self.conn.execute(f"UPDATE work_units SET {sets} WHERE unit_id=?",
-                          [to_sql(v) for v in fields.values()] + [unit_id])
+        self.conn.execute(
+            f"UPDATE work_units SET {sets} WHERE unit_id=?",
+            [to_sql(v) for v in fields.values()] + [unit_id],
+        )
 
     def get_unit(self, unit_id: int) -> sqlite3.Row:
         row: sqlite3.Row = self.conn.execute(
-            "SELECT * FROM work_units WHERE unit_id=?", (unit_id,)).fetchone()
+            "SELECT * FROM work_units WHERE unit_id=?", (unit_id,)
+        ).fetchone()
         return row
 
-    def final_unit_elsewhere(self, unit_key: str, overlap_seconds: int,
-                             exclude_run: str) -> sqlite3.Row | None:
+    def final_unit_elsewhere(
+        self, unit_key: str, overlap_seconds: int, exclude_run: str
+    ) -> sqlite3.Row | None:
         """A completed unit with the same key from another run that is *final*:
         it finished at least ``overlap_seconds`` after its window ended."""
         rows = self.conn.execute(
             "SELECT * FROM work_units WHERE unit_key=? AND status='complete' AND run_id<>? "
-            "ORDER BY completed_at DESC", (unit_key, exclude_run)).fetchall()
+            "ORDER BY completed_at DESC",
+            (unit_key, exclude_run),
+        ).fetchall()
         for r in rows:
             end = datetime.fromisoformat(r["window_end"].replace("Z", "+00:00"))
             done = datetime.fromisoformat(r["completed_at"].replace("Z", "+00:00"))
@@ -610,5 +893,6 @@ class Store:
         return None
 
     def units_for_run(self, run_id: str) -> list[sqlite3.Row]:
-        return list(self.conn.execute(
-            "SELECT * FROM work_units WHERE run_id=? ORDER BY unit_id", (run_id,)))
+        return list(
+            self.conn.execute("SELECT * FROM work_units WHERE run_id=? ORDER BY unit_id", (run_id,))
+        )

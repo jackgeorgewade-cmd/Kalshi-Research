@@ -64,8 +64,9 @@ class _Ctx:
     def failed(self) -> bool:
         return any(i.severity == "error" for i in self.issues)
 
-    def dec(self, obj: dict[str, Any], name: str, *, essential: bool = False,
-            label: str | None = None) -> Decimal | None:
+    def dec(
+        self, obj: dict[str, Any], name: str, *, essential: bool = False, label: str | None = None
+    ) -> Decimal | None:
         label = label or name
         if name not in obj or obj[name] is None:
             if essential:
@@ -88,7 +89,8 @@ class _Ctx:
                 raise ValueError(f"expected string, got {type(value).__name__}")
         except ValueError as exc:
             (self.error if essential else self.warn)(
-                "malformed_field", f"'{name}' not a timestamp: {exc}")
+                "malformed_field", f"'{name}' not a timestamp: {exc}"
+            )
             return None
         if parsed is None and essential:
             self.error("missing_field", f"essential field '{name}' missing or empty")
@@ -102,7 +104,8 @@ class _Ctx:
             return None if value is None else ""
         if not isinstance(value, str):
             (self.error if essential else self.warn)(
-                "malformed_field", f"'{name}' expected string, got {type(value).__name__}")
+                "malformed_field", f"'{name}' expected string, got {type(value).__name__}"
+            )
             return None
         return value
 
@@ -127,39 +130,96 @@ def _check_price(ctx: _Ctx, name: str, value: Decimal | None) -> None:
 # --------------------------------------------------------------------------
 # Known field sets, used to report (not drop) unknown fields.
 # --------------------------------------------------------------------------
-TRADE_FIELDS = frozenset({
-    "trade_id", "ticker", "count_fp", "yes_price_dollars", "no_price_dollars", "taker_side",
-    "taker_outcome_side", "taker_book_side", "created_time", "is_block_trade",
-})
+TRADE_FIELDS = frozenset(
+    {
+        "trade_id",
+        "ticker",
+        "count_fp",
+        "yes_price_dollars",
+        "no_price_dollars",
+        "taker_side",
+        "taker_outcome_side",
+        "taker_book_side",
+        "created_time",
+        "is_block_trade",
+    }
+)
 MARKET_SCALAR_FIELDS = (
-    "market_type", "title", "subtitle", "yes_sub_title", "no_sub_title", "status", "result",
-    "strike_type", "functional_strike", "rules_primary", "rules_secondary",
-    "price_level_structure", "expiration_value", "mve_collection_ticker",
-    "settlement_bounds_type", "early_close_condition",
+    "market_type",
+    "title",
+    "subtitle",
+    "yes_sub_title",
+    "no_sub_title",
+    "status",
+    "result",
+    "strike_type",
+    "functional_strike",
+    "rules_primary",
+    "rules_secondary",
+    "price_level_structure",
+    "expiration_value",
+    "mve_collection_ticker",
+    "settlement_bounds_type",
+    "early_close_condition",
 )
 MARKET_TIME_FIELDS = (
-    "created_time", "open_time", "close_time", "expected_expiration_time",
-    "latest_expiration_time", "expiration_time", "settlement_ts", "occurrence_datetime",
-    "updated_time", "fee_waiver_expiration_time",
+    "created_time",
+    "open_time",
+    "close_time",
+    "expected_expiration_time",
+    "latest_expiration_time",
+    "expiration_time",
+    "settlement_ts",
+    "occurrence_datetime",
+    "updated_time",
+    "fee_waiver_expiration_time",
 )
 MARKET_DECIMAL_FIELDS = (
-    "floor_strike", "cap_strike", "notional_value_dollars", "settlement_value_dollars",
-    "settlement_floor_dollars", "last_price_dollars", "previous_price_dollars",
-    "yes_bid_dollars", "yes_ask_dollars", "no_bid_dollars", "no_ask_dollars",
-    "previous_yes_bid_dollars", "previous_yes_ask_dollars", "yes_bid_size_fp",
-    "yes_ask_size_fp", "volume_fp", "volume_24h_fp", "open_interest_fp",
+    "floor_strike",
+    "cap_strike",
+    "notional_value_dollars",
+    "settlement_value_dollars",
+    "settlement_floor_dollars",
+    "last_price_dollars",
+    "previous_price_dollars",
+    "yes_bid_dollars",
+    "yes_ask_dollars",
+    "no_bid_dollars",
+    "no_ask_dollars",
+    "previous_yes_bid_dollars",
+    "previous_yes_ask_dollars",
+    "yes_bid_size_fp",
+    "yes_ask_size_fp",
+    "volume_fp",
+    "volume_24h_fp",
+    "open_interest_fp",
 )
-MARKET_OTHER_FIELDS = frozenset({
-    "ticker", "event_ticker", "custom_strike", "price_ranges", "can_close_early",
-    "settlement_timer_seconds", "mve_selected_legs", "primary_participant_key",
-    "is_provisional", "exchange_index",
-})
-MARKET_FIELDS = (frozenset(MARKET_SCALAR_FIELDS) | frozenset(MARKET_TIME_FIELDS)
-                 | frozenset(MARKET_DECIMAL_FIELDS) | MARKET_OTHER_FIELDS)
-CANDLE_LIVE_FIELDS = frozenset({"end_period_ts", "yes_bid", "yes_ask", "price", "volume_fp",
-                                "open_interest_fp"})
-CANDLE_HIST_FIELDS = frozenset({"end_period_ts", "yes_bid", "yes_ask", "price", "volume",
-                                "open_interest"})
+MARKET_OTHER_FIELDS = frozenset(
+    {
+        "ticker",
+        "event_ticker",
+        "custom_strike",
+        "price_ranges",
+        "can_close_early",
+        "settlement_timer_seconds",
+        "mve_selected_legs",
+        "primary_participant_key",
+        "is_provisional",
+        "exchange_index",
+    }
+)
+MARKET_FIELDS = (
+    frozenset(MARKET_SCALAR_FIELDS)
+    | frozenset(MARKET_TIME_FIELDS)
+    | frozenset(MARKET_DECIMAL_FIELDS)
+    | MARKET_OTHER_FIELDS
+)
+CANDLE_LIVE_FIELDS = frozenset(
+    {"end_period_ts", "yes_bid", "yes_ask", "price", "volume_fp", "open_interest_fp"}
+)
+CANDLE_HIST_FIELDS = frozenset(
+    {"end_period_ts", "yes_bid", "yes_ask", "price", "volume", "open_interest"}
+)
 
 
 def unknown_fields(item: dict[str, Any], known: frozenset[str]) -> list[str]:
@@ -199,8 +259,10 @@ def parse_trade(item: Any) -> tuple[Record | None, list[Issue]]:
     _check_price(ctx, "no_price", rec["no_price"])
     if rec["count"] is not None and rec["count"] <= 0:
         ctx.warn("out_of_range", f"non-positive count {rec['count']}")
-    if rec["yes_price"] is not None and rec["no_price"] is not None and (
-        rec["yes_price"] + rec["no_price"] != Decimal(1)
+    if (
+        rec["yes_price"] is not None
+        and rec["no_price"] is not None
+        and (rec["yes_price"] + rec["no_price"] != Decimal(1))
     ):
         ctx.warn("price_mismatch", "yes_price + no_price != 1.00 (check notional)")
     return rec, ctx.issues
@@ -287,8 +349,15 @@ def parse_event(item: Any) -> tuple[Record | None, list[Issue]]:
 _OHLC = ("open", "high", "low", "close")
 
 
-def _ohlc(ctx: _Ctx, obj: Any, prefix: str, suffix: str, fields: tuple[str, ...],
-          out: Record, out_prefix: str) -> None:
+def _ohlc(
+    ctx: _Ctx,
+    obj: Any,
+    prefix: str,
+    suffix: str,
+    fields: tuple[str, ...],
+    out: Record,
+    out_prefix: str,
+) -> None:
     """Copy an OHLC sub-object; a missing/empty object yields NULLs (observed
     live: ``"price": {}`` when no trade occurred in the period)."""
     if obj is None:
@@ -303,8 +372,9 @@ def _ohlc(ctx: _Ctx, obj: Any, prefix: str, suffix: str, fields: tuple[str, ...]
 CANDLE_TRADE_FIELDS = ("open", "high", "low", "close", "mean", "previous", "min", "max")
 
 
-def parse_candle(item: Any, ticker: str, interval: int,
-                 schema: str) -> tuple[Record | None, list[Issue]]:
+def parse_candle(
+    item: Any, ticker: str, interval: int, schema: str
+) -> tuple[Record | None, list[Issue]]:
     """Normalize one candlestick.
 
     Args:
@@ -331,8 +401,13 @@ def parse_candle(item: Any, ticker: str, interval: int,
     if not isinstance(end_ts, int) or isinstance(end_ts, bool):
         ctx.error("missing_field", "end_period_ts missing or not an integer")
         return None, ctx.issues
-    rec: Record = {"ticker": ticker, "interval_minutes": interval, "end_period_ts": end_ts,
-                   "end_period_time": from_unix(end_ts), "source_schema": schema}
+    rec: Record = {
+        "ticker": ticker,
+        "interval_minutes": interval,
+        "end_period_ts": end_ts,
+        "end_period_time": from_unix(end_ts),
+        "source_schema": schema,
+    }
     sfx = "_dollars" if schema == "live" else ""
     trade_fields = CANDLE_TRADE_FIELDS if schema == "live" else CANDLE_TRADE_FIELDS[:6]
     _ohlc(ctx, item.get("price"), "price", sfx, trade_fields, rec, "trade")
@@ -350,8 +425,9 @@ def parse_candle(item: Any, ticker: str, interval: int,
         # Schema mismatch is the most likely cause (e.g. wrong adapter).
         other = "volume" if schema == "live" else "volume_fp"
         if other in item:
-            ctx.error("schema_mismatch",
-                      f"found '{other}' but parsing with the {schema} candle schema")
+            ctx.error(
+                "schema_mismatch", f"found '{other}' but parsing with the {schema} candle schema"
+            )
             return None, ctx.issues
     for k in [k for k in rec if k.startswith(("trade_", "yes_bid_", "yes_ask_"))]:
         _check_price(ctx, k, rec[k])

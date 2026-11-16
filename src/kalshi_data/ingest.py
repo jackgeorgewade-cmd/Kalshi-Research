@@ -32,7 +32,7 @@ import logging
 import uuid
 from collections.abc import Callable, Iterable
 from dataclasses import asdict, dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta
 from decimal import Decimal
 from typing import Any
 
@@ -134,8 +134,9 @@ class RunResult:
 ProgressFn = Callable[[str, dict[str, Any]], None]
 
 
-def unit_key(dataset: str, ticker: str, interval: int | None, start: datetime,
-             end: datetime) -> str:
+def unit_key(
+    dataset: str, ticker: str, interval: int | None, start: datetime, end: datetime
+) -> str:
     """Deterministic identity of a bounded unit of work."""
     return f"{dataset}|{ticker}|{interval or '-'}|{iso(start)}|{iso(end)}"
 
@@ -147,8 +148,14 @@ def new_run_id() -> str:
 class Ingestor:
     """Executes ingestion runs against one store."""
 
-    def __init__(self, settings: Settings, store: Store, raw: RawStore, client: KalshiClient,
-                 progress: ProgressFn | None = None) -> None:
+    def __init__(
+        self,
+        settings: Settings,
+        store: Store,
+        raw: RawStore,
+        client: KalshiClient,
+        progress: ProgressFn | None = None,
+    ) -> None:
         self.settings = settings
         self.store = store
         self.raw = raw
@@ -163,37 +170,74 @@ class Ingestor:
         self.always_snapshot_markets = False
 
     # ------------------------------------------------------------ plumbing
-    def _persist(self, run_id: str | None, record: ResponseRecord, tier: str | None,
-                 item_count: int | None, write: Callable[[], None]) -> None:
+    def _persist(
+        self,
+        run_id: str | None,
+        record: ResponseRecord,
+        tier: str | None,
+        item_count: int | None,
+        write: Callable[[], None],
+    ) -> None:
         """Raw file first, then one transaction (request row + data + checkpoint)."""
         raw_path = self.raw.write(run_id or "adhoc", record, PARSER_VERSION)
         with self.store.transaction():
             self.store.insert_request(
-                request_id=record.request_id, run_id=run_id, path=record.path,
-                params=record.params, url=record.url, status=record.status,
-                requested_at=record.requested_at, received_at=record.received_at,
-                attempts=record.attempts, tier=tier, raw_path=raw_path,
-                sha256=body_sha256(record.body), body_bytes=len(record.body),
-                parser_version=PARSER_VERSION, item_count=item_count)
+                request_id=record.request_id,
+                run_id=run_id,
+                path=record.path,
+                params=record.params,
+                url=record.url,
+                status=record.status,
+                requested_at=record.requested_at,
+                received_at=record.received_at,
+                attempts=record.attempts,
+                tier=tier,
+                raw_path=raw_path,
+                sha256=body_sha256(record.body),
+                body_bytes=len(record.body),
+                parser_version=PARSER_VERSION,
+                item_count=item_count,
+            )
             write()
 
-    def _record_failure(self, run_id: str | None, path: str, exc: Exception,
-                        tier: str | None) -> None:
+    def _record_failure(
+        self, run_id: str | None, path: str, exc: Exception, tier: str | None
+    ) -> None:
         with self.store.transaction():
             self.store.insert_request(
-                request_id=uuid.uuid4().hex, run_id=run_id, path=path, params={}, url=None,
-                status=getattr(exc, "status", None), requested_at=utcnow(), received_at=None,
-                attempts=None, tier=tier, raw_path=None, sha256=None, body_bytes=None,
-                parser_version=None, item_count=None, error=str(exc)[:1000])
+                request_id=uuid.uuid4().hex,
+                run_id=run_id,
+                path=path,
+                params={},
+                url=None,
+                status=getattr(exc, "status", None),
+                requested_at=utcnow(),
+                received_at=None,
+                attempts=None,
+                tier=tier,
+                raw_path=None,
+                sha256=None,
+                body_bytes=None,
+                parser_version=None,
+                item_count=None,
+                error=str(exc)[:1000],
+            )
 
-    def _unknown(self, run_id: str | None, dataset: str, item: dict[str, Any],
-                 known: frozenset[str]) -> list[Issue]:
+    def _unknown(
+        self, run_id: str | None, dataset: str, item: dict[str, Any], known: frozenset[str]
+    ) -> list[Issue]:
         out = []
         for f in unknown_fields(item, known):
             if (dataset, f) not in self._unknown_reported:
                 self._unknown_reported.add((dataset, f))
-                out.append(Issue("warning", "unknown_field",
-                                 f"{dataset}: unmapped field '{f}' (kept in raw file)", f))
+                out.append(
+                    Issue(
+                        "warning",
+                        "unknown_field",
+                        f"{dataset}: unmapped field '{f}' (kept in raw file)",
+                        f,
+                    )
+                )
         return out
 
     # -------------------------------------------------------------- cutoff
@@ -210,16 +254,21 @@ class Ingestor:
         self._cutoff, self._cutoff_at = cutoff, utcnow()
         return cutoff
 
-    def current_cutoff(self, run_id: str | None, *, max_age: float = CUTOFF_REFRESH_SECONDS
-                       ) -> Cutoff:
-        if self._cutoff is None or self._cutoff_at is None or (
-                utcnow() - self._cutoff_at).total_seconds() > max_age:
+    def current_cutoff(
+        self, run_id: str | None, *, max_age: float = CUTOFF_REFRESH_SECONDS
+    ) -> Cutoff:
+        if (
+            self._cutoff is None
+            or self._cutoff_at is None
+            or (utcnow() - self._cutoff_at).total_seconds() > max_age
+        ):
             return self.fetch_cutoff(run_id)
         return self._cutoff
 
     # ------------------------------------------------------------ metadata
-    def store_market_page(self, run_id: str | None, record: ResponseRecord, items: list[Any],
-                          tier: Tier) -> list[Record]:
+    def store_market_page(
+        self, run_id: str | None, record: ResponseRecord, items: list[Any], tier: Tier
+    ) -> list[Record]:
         """Normalize and persist a list of market objects from one response."""
         recs: list[Record] = []
         issues: list[Issue] = []
@@ -233,11 +282,16 @@ class Ingestor:
 
         def write() -> None:
             for rec in recs:
-                self.store.upsert_market(rec, tier=tier.value, request_id=record.request_id,
-                                         retrieved_at=record.received_at,
-                                         always_snapshot=self.always_snapshot_markets)
-            self.store.add_issues(issues, run_id=run_id, request_id=record.request_id,
-                                  dataset="market")
+                self.store.upsert_market(
+                    rec,
+                    tier=tier.value,
+                    request_id=record.request_id,
+                    retrieved_at=record.received_at,
+                    always_snapshot=self.always_snapshot_markets,
+                )
+            self.store.add_issues(
+                issues, run_id=run_id, request_id=record.request_id, dataset="market"
+            )
 
         self._persist(run_id, record, tier.value, len(items), write)
         return recs
@@ -252,8 +306,9 @@ class Ingestor:
             def write() -> None:
                 if rec is not None:
                     self.store.upsert_event(rec, record.request_id, record.received_at)
-                self.store.add_issues(issues, run_id=run_id, request_id=record.request_id,
-                                      dataset="event")
+                self.store.add_issues(
+                    issues, run_id=run_id, request_id=record.request_id, dataset="event"
+                )
 
             self._persist(run_id, record, None, 1, write)
             self._events_done.add(event_ticker)
@@ -275,8 +330,12 @@ class Ingestor:
             except NotFoundError:
                 continue
         if record is None:
-            raise NotFoundError(404, f"/markets/{ticker}", code="not_found",
-                                message=f"market {ticker} not found in live or historical tier")
+            raise NotFoundError(
+                404,
+                f"/markets/{ticker}",
+                code="not_found",
+                message=f"market {ticker} not found in live or historical tier",
+            )
         body = record.json()
         item = body.get("market") if isinstance(body, dict) else None
         recs = self.store_market_page(run_id, record, [item], tier)
@@ -284,14 +343,26 @@ class Ingestor:
             raise KalshiDataError(f"market {ticker}: response failed validation (see issues)")
         rec = recs[0]
         series = self.ensure_event(run_id, rec["event_ticker"])
-        return MarketInfo(ticker=rec["ticker"], event_ticker=rec["event_ticker"],
-                          series_ticker=series, found_tier=tier, created=rec["created_time"],
-                          settled=rec["settlement_ts"], status=rec["status"],
-                          notional=rec["notional_value_dollars"])
+        return MarketInfo(
+            ticker=rec["ticker"],
+            event_ticker=rec["event_ticker"],
+            series_ticker=series,
+            found_tier=tier,
+            created=rec["created_time"],
+            settled=rec["settlement_ts"],
+            status=rec["status"],
+            notional=rec["notional_value_dollars"],
+        )
 
-    def discover_markets(self, run_id: str | None, *, series: str | None = None,
-                         event: str | None = None, include_historical: bool = True,
-                         max_markets: int | None = None) -> list[Record]:
+    def discover_markets(
+        self,
+        run_id: str | None,
+        *,
+        series: str | None = None,
+        event: str | None = None,
+        include_historical: bool = True,
+        max_markets: int | None = None,
+    ) -> list[Record]:
         """List markets for a series or event from both tiers, merged by ticker.
 
         Never truncates silently: if ``max_markets`` would be exceeded a
@@ -303,8 +374,11 @@ class Ingestor:
         pages_cap = None if limit is None else limit // self.client.page_limit + 2
         for tier in tiers:
             pages: Iterable[Page] = self.client.market_pages(
-                tier, series_ticker=series, event_ticker=None if series else event,
-                max_pages=pages_cap)
+                tier,
+                series_ticker=series,
+                event_ticker=None if series else event,
+                max_pages=pages_cap,
+            )
             last: Page | None = None
             for page in pages:
                 last = page
@@ -315,10 +389,12 @@ class Ingestor:
                 if limit is not None and len(merged) > limit:
                     raise ConfigError(
                         f"{series or event} has more than {limit} markets; list specific "
-                        "tickers/events or raise collection.max_markets_per_series")
+                        "tickers/events or raise collection.max_markets_per_series"
+                    )
             if last is not None and last.next_cursor is not None:
-                raise ConfigError(f"market listing for {series or event} hit the page cap; "
-                                  "narrow the scope")
+                raise ConfigError(
+                    f"market listing for {series or event} hit the page cap; narrow the scope"
+                )
         return list(merged.values())
 
     # ------------------------------------------------------------- runs
@@ -331,8 +407,10 @@ class Ingestor:
 
     def _save_spec(self, run_id: str, request: JobRequest) -> None:
         with self.store.transaction():
-            self.store.conn.execute("UPDATE runs SET spec_json=? WHERE run_id=?",
-                                    (dumps_exact(request.to_json(), sort_keys=True), run_id))
+            self.store.conn.execute(
+                "UPDATE runs SET spec_json=? WHERE run_id=?",
+                (dumps_exact(request.to_json(), sort_keys=True), run_id),
+            )
 
     def run(self, request: JobRequest, run_id: str | None = None) -> RunResult:
         """Execute (or resume, when ``run_id`` is given) a collection run."""
@@ -349,8 +427,10 @@ class Ingestor:
                 old_cutoff = row["cutoff_json"] if row else None
             cutoff = self.fetch_cutoff(run_id)
             if old_cutoff and json.loads(old_cutoff) != cutoff.raw:
-                log.info("Historical cutoff changed since the run started; unfinished units "
-                         "will be re-routed")
+                log.info(
+                    "Historical cutoff changed since the run started; unfinished units "
+                    "will be re-routed"
+                )
                 self.progress("note", {"message": "historical cutoff changed; re-routing"})
             markets = self._resolve_scope(run_id, request)
             units = self._plan(run_id, request, markets)
@@ -368,9 +448,10 @@ class Ingestor:
             status, message = "failed", str(exc)
             self._mark_running_incomplete(run_id, f"run failed: {exc}")
         units_summary = self._summary(run_id)
-        if status == "completed" and any(units_summary.get(s, 0) for s in
-                                         ("failed", "not_found", "incomplete", "pending",
-                                          "running")):
+        if status == "completed" and any(
+            units_summary.get(s, 0)
+            for s in ("failed", "not_found", "incomplete", "pending", "running")
+        ):
             status = "incomplete"
             message = "some work units did not complete; see `kalshi-data status`"
         used = self._finish(run_id, status, message, used_before)
@@ -387,13 +468,15 @@ class Ingestor:
         with self.store.transaction():
             self.store.conn.execute(
                 "UPDATE work_units SET status='incomplete', note=?, updated_at=? "
-                "WHERE run_id=? AND status IN ('running')", (note, iso(utcnow()), run_id))
+                "WHERE run_id=? AND status IN ('running')",
+                (note, iso(utcnow()), run_id),
+            )
 
     def _summary(self, run_id: str) -> dict[str, int]:
         out: dict[str, int] = {}
         for r in self.store.conn.execute(
-                "SELECT status, COUNT(*) n FROM work_units WHERE run_id=? GROUP BY status",
-                (run_id,)):
+            "SELECT status, COUNT(*) n FROM work_units WHERE run_id=? GROUP BY status", (run_id,)
+        ):
             out[r["status"]] = r["n"]
         return out
 
@@ -403,11 +486,13 @@ class Ingestor:
             tickers = list(dict.fromkeys(request.tickers))
             cap = self.settings.collection.max_markets_per_series
             for s in request.series:
-                tickers += [r["ticker"] for r in self.discover_markets(
-                    run_id, series=s, max_markets=cap)]
+                tickers += [
+                    r["ticker"] for r in self.discover_markets(run_id, series=s, max_markets=cap)
+                ]
             for e in request.events:
-                tickers += [r["ticker"] for r in self.discover_markets(
-                    run_id, event=e, max_markets=cap)]
+                tickers += [
+                    r["ticker"] for r in self.discover_markets(run_id, event=e, max_markets=cap)
+                ]
             request.resolved_tickers = list(dict.fromkeys(tickers))
             self._save_spec(run_id, request)
         markets: dict[str, MarketInfo | None] = {}
@@ -420,8 +505,9 @@ class Ingestor:
             self.progress("market", {"ticker": t, "found": markets[t] is not None})
         return markets
 
-    def _plan(self, run_id: str, request: JobRequest,
-              markets: dict[str, MarketInfo | None]) -> list[int]:
+    def _plan(
+        self, run_id: str, request: JobRequest, markets: dict[str, MarketInfo | None]
+    ) -> list[int]:
         unit_ids: list[int] = []
         with self.store.transaction():
             for ticker, info in markets.items():
@@ -432,25 +518,39 @@ class Ingestor:
                     if dataset == "orderbook":
                         cells = [(request.start, request.end)]
                     else:
-                        clipped = (request.start, request.end) if info is None else \
-                            clip_to_market_life(request.start, request.end, info.created,
-                                                info.settled)
+                        clipped = (
+                            (request.start, request.end)
+                            if info is None
+                            else clip_to_market_life(
+                                request.start, request.end, info.created, info.settled
+                            )
+                        )
                         if clipped is None:
                             continue  # requested range lies outside the market's life
-                        cells = (trade_cells(*clipped) if dataset == "trades"
-                                 else candle_cells(*clipped, request.candle_interval))
+                        cells = (
+                            trade_cells(*clipped)
+                            if dataset == "trades"
+                            else candle_cells(*clipped, request.candle_interval)
+                        )
                     for s, e in cells:
                         key = unit_key(dataset, ticker, interval, s, e)
-                        row = self.store.ensure_unit(run_id, key, dataset, ticker, interval,
-                                                     s, e)
+                        row = self.store.ensure_unit(run_id, key, dataset, ticker, interval, s, e)
                         if info is None and row["status"] == "pending":
-                            self.store.update_unit(row["unit_id"], status="not_found",
-                                                   error="market not found in either tier")
+                            self.store.update_unit(
+                                row["unit_id"],
+                                status="not_found",
+                                error="market not found in either tier",
+                            )
                         unit_ids.append(row["unit_id"])
         return unit_ids
 
-    def _execute(self, run_id: str, unit_ids: list[int],
-                 markets: dict[str, MarketInfo | None], request: JobRequest) -> None:
+    def _execute(
+        self,
+        run_id: str,
+        unit_ids: list[int],
+        markets: dict[str, MarketInfo | None],
+        request: JobRequest,
+    ) -> None:
         overlap = self.settings.collection.overlap_seconds
         for n, uid in enumerate(unit_ids, 1):
             unit = self.store.get_unit(uid)
@@ -464,11 +564,22 @@ class Ingestor:
                 if prior is not None:
                     with self.store.transaction():
                         self.store.update_unit(
-                            uid, status="skipped", completed_at=utcnow(),
-                            note=f"final copy exists from run {prior['run_id']}")
+                            uid,
+                            status="skipped",
+                            completed_at=utcnow(),
+                            note=f"final copy exists from run {prior['run_id']}",
+                        )
                     continue
-            self.progress("unit", {"n": n, "total": len(unit_ids), "dataset": unit["dataset"],
-                                   "ticker": unit["ticker"], "window": unit["window_start"]})
+            self.progress(
+                "unit",
+                {
+                    "n": n,
+                    "total": len(unit_ids),
+                    "dataset": unit["dataset"],
+                    "ticker": unit["ticker"],
+                    "window": unit["window_start"],
+                },
+            )
             try:
                 if unit["dataset"] == "trades":
                     self._run_trade_unit(run_id, uid, info)
@@ -477,8 +588,13 @@ class Ingestor:
                 elif unit["dataset"] == "orderbook":
                     self.snapshot_orderbook(run_id, info.ticker, notional=info.notional)
                     with self.store.transaction():
-                        self.store.update_unit(uid, status="complete", completed_at=utcnow(),
-                                               rows_received=1, rows_new=1)
+                        self.store.update_unit(
+                            uid,
+                            status="complete",
+                            completed_at=utcnow(),
+                            rows_received=1,
+                            rows_new=1,
+                        )
             except BudgetExhaustedError:
                 raise
             except (APIError, PaginationError, KalshiDataError) as exc:
@@ -489,6 +605,41 @@ class Ingestor:
                     self.store.update_unit(uid, status="failed", error=str(exc)[:1000])
                 self.progress("unit_failed", {"key": unit["unit_key"], "error": str(exc)})
 
+    def _incremental_start(
+        self, run_id: str, unit: Any, start: datetime, end: datetime
+    ) -> tuple[datetime, str | None]:
+        """Where an update of this window may start.
+
+        If another run already completed a window with the same dataset, ticker,
+        interval and *start*, everything before ``min(that completion time,
+        that window end) - overlap_seconds`` is final and is not fetched again.
+        The overlap re-fetch picks up late trades and revised recent candles.
+        """
+        row = self.store.conn.execute(
+            "SELECT run_id, completed_at, window_end FROM work_units WHERE dataset=? AND "
+            "ticker=? AND COALESCE(interval_minutes, -1)=COALESCE(?, -1) AND window_start=? "
+            "AND status='complete' AND run_id<>? ORDER BY completed_at DESC LIMIT 1",
+            (
+                unit["dataset"],
+                unit["ticker"],
+                unit["interval_minutes"],
+                unit["window_start"],
+                run_id,
+            ),
+        ).fetchone()
+        if row is None:
+            return start, None
+        done = parse_api_time(row["completed_at"])
+        prev_end = parse_api_time(row["window_end"])
+        assert done is not None and prev_end is not None
+        safe = min(done, prev_end) - timedelta(seconds=self.settings.collection.overlap_seconds)
+        if safe <= start or safe >= end:
+            return start, None
+        return safe, (
+            f"incremental update: data before {iso(safe)} already final "
+            f"(run {row['run_id']}); re-fetched overlap from there"
+        )
+
     # ------------------------------------------------------------- trades
     def _run_trade_unit(self, run_id: str, uid: int, info: MarketInfo) -> None:
         unit = self.store.get_unit(uid)
@@ -496,30 +647,42 @@ class Ingestor:
         end = parse_api_time(unit["window_end"])
         assert start is not None and end is not None
         cutoff = self.current_cutoff(run_id)
-        phases = split_trade_window(start, end, cutoff)
+        fetch_start, inc_note = self._incremental_start(run_id, unit, start, end)
+        notes = [inc_note] if inc_note else []
+        phases = split_trade_window(fetch_start, end, cutoff)
         phase_ids = [f"{t.value}:{iso(s)}:{iso(e)}" for t, s, e in phases]
         idx, cursor = 0, None
-        notes = []
         if unit["phase"] in phase_ids:
             idx, cursor = phase_ids.index(unit["phase"]), unit["cursor"]
         elif unit["phase"]:
             notes.append("routing changed since checkpoint; unit restarted")
         with self.store.transaction():
-            self.store.update_unit(uid, status="running", attempts=unit["attempts"] + 1,
-                                   error=None)
+            self.store.update_unit(uid, status="running", attempts=unit["attempts"] + 1, error=None)
         for i in range(idx, len(phases)):
             tier, ps, pe = phases[i]
             nxt = phase_ids[i + 1] if i + 1 < len(phases) else None
             try:
-                self._trade_phase(run_id, uid, info.ticker, start, end, tier, ps, pe,
-                                  phase_ids[i], nxt, cursor if i == idx else None)
+                self._trade_phase(
+                    run_id,
+                    uid,
+                    info.ticker,
+                    start,
+                    end,
+                    tier,
+                    ps,
+                    pe,
+                    phase_ids[i],
+                    nxt,
+                    cursor if i == idx else None,
+                )
             except PaginationError as exc:
                 # A cursor the API rejected, or a cursor sequence we cannot trust:
                 # restart this bounded phase from its first page, once. Rows already
                 # stored are de-duplicated by trade_id. A second failure propagates.
                 notes.append(f"cursor problem ({exc}); phase restarted from first page")
-                self._trade_phase(run_id, uid, info.ticker, start, end, tier, ps, pe,
-                                  phase_ids[i], nxt, None)
+                self._trade_phase(
+                    run_id, uid, info.ticker, start, end, tier, ps, pe, phase_ids[i], nxt, None
+                )
         # Bounded reconciliation for trades that may have moved live -> historical
         # while we were reading: if the cutoff advanced into this window, read the
         # newly archived slice from the historical tier once.
@@ -529,18 +692,45 @@ class Ingestor:
             if new_c > old_c and new_c > start and old_c < end:
                 rs, re_ = max(start, old_c), min(end, new_c)
                 notes.append(f"cutoff advanced; reconciled historical {iso(rs)}..{iso(re_)}")
-                self._trade_phase(run_id, uid, info.ticker, start, end, Tier.HISTORICAL,
-                                  rs, re_, f"reconcile:{iso(rs)}:{iso(re_)}", None, None)
+                self._trade_phase(
+                    run_id,
+                    uid,
+                    info.ticker,
+                    start,
+                    end,
+                    Tier.HISTORICAL,
+                    rs,
+                    re_,
+                    f"reconcile:{iso(rs)}:{iso(re_)}",
+                    None,
+                    None,
+                )
         unit = self.store.get_unit(uid)
         if unit["rows_received"] == 0:
             notes.append("no trades returned")
         with self.store.transaction():
-            self.store.update_unit(uid, status="complete", completed_at=utcnow(), cursor=None,
-                                   note="; ".join(notes) or None)
+            self.store.update_unit(
+                uid,
+                status="complete",
+                completed_at=utcnow(),
+                cursor=None,
+                note="; ".join(notes) or None,
+            )
 
-    def _trade_phase(self, run_id: str, uid: int, ticker: str, start: datetime, end: datetime,
-                     tier: Tier, ps: datetime, pe: datetime, phase_id: str,
-                     next_phase_id: str | None, cursor: str | None) -> None:
+    def _trade_phase(
+        self,
+        run_id: str,
+        uid: int,
+        ticker: str,
+        start: datetime,
+        end: datetime,
+        tier: Tier,
+        ps: datetime,
+        pe: datetime,
+        phase_id: str,
+        next_phase_id: str | None,
+        cursor: str | None,
+    ) -> None:
         """Page through one tier segment, committing a checkpoint per page.
 
         Kalshi compares ``min_ts``/``max_ts`` with sub-second trade times, so we
@@ -549,25 +739,52 @@ class Ingestor:
         """
         unit = self.store.get_unit(uid)
         stored_first = unit["first_item_key"] if cursor else None
-        pages = self.client.trade_pages(tier, ticker, to_unix(ps) - 1, to_unix(pe) + 1,
-                                        start_cursor=cursor)
+        pages = self.client.trade_pages(
+            tier, ticker, to_unix(ps) - 1, to_unix(pe) + 1, start_cursor=cursor
+        )
         sent_cursor = cursor  # cursor carried by the next request
         try:
             for page in pages:
                 sent_cursor = page.next_cursor
-                self._trade_page(run_id, uid, ticker, start, end, tier, page, phase_id,
-                                 next_phase_id, cursor, stored_first)
+                self._trade_page(
+                    run_id,
+                    uid,
+                    ticker,
+                    start,
+                    end,
+                    tier,
+                    page,
+                    phase_id,
+                    next_phase_id,
+                    cursor,
+                    stored_first,
+                )
         except BadRequestError as exc:
             if sent_cursor:
                 raise CursorRejectedError(f"cursor rejected: {exc}") from exc
             raise
 
-    def _trade_page(self, run_id: str, uid: int, ticker: str, start: datetime, end: datetime,
-                    tier: Tier, page: Page, phase_id: str, next_phase_id: str | None,
-                    cursor: str | None, stored_first: str | None) -> None:
+    def _trade_page(
+        self,
+        run_id: str,
+        uid: int,
+        ticker: str,
+        start: datetime,
+        end: datetime,
+        tier: Tier,
+        page: Page,
+        phase_id: str,
+        next_phase_id: str | None,
+        cursor: str | None,
+        stored_first: str | None,
+    ) -> None:
         """Normalize one page of trades and commit it with the checkpoint."""
-        if stored_first and page.items and page.items[0].get("trade_id") == stored_first \
-                and page.index == 0:
+        if (
+            stored_first
+            and page.items
+            and page.items[0].get("trade_id") == stored_first
+            and page.index == 0
+        ):
             log.info("cursor for %s was not honoured (restarted at first page)", ticker)
         recs: list[Record] = []
         issues: list[Issue] = []
@@ -578,37 +795,61 @@ class Ingestor:
                 issues.extend(self._unknown(run_id, "trade", item, TRADE_FIELDS))
             if rec is not None and start <= rec["created_time"] < end:
                 if rec["ticker"] != ticker:
-                    issues.append(Issue("error", "wrong_market",
-                                        f"trade for {rec['ticker']} returned for {ticker}",
-                                        rec["trade_id"], item))
+                    issues.append(
+                        Issue(
+                            "error",
+                            "wrong_market",
+                            f"trade for {rec['ticker']} returned for {ticker}",
+                            rec["trade_id"],
+                            item,
+                        )
+                    )
                     continue
                 recs.append(rec)
         done = page.next_cursor is None
-        first_key = (page.items[0].get("trade_id") if page.items and page.index == 0
-                     and cursor is None else None)
+        first_key = (
+            page.items[0].get("trade_id")
+            if page.items and page.index == 0 and cursor is None
+            else None
+        )
 
-        def write(recs: list[Record] = recs, issues: list[Issue] = issues,
-                  page: Page = page, done: bool = done,
-                  first_key: Any = first_key) -> None:
+        def write(
+            recs: list[Record] = recs,
+            issues: list[Issue] = issues,
+            page: Page = page,
+            done: bool = done,
+            first_key: Any = first_key,
+        ) -> None:
             new, _same, _conf = self.store.insert_trades(
-                recs, tier=tier.value, request_id=page.record.request_id,
-                retrieved_at=page.record.received_at, parser_version=PARSER_VERSION,
-                run_id=run_id)
-            self.store.add_issues(issues, run_id=run_id, request_id=page.record.request_id,
-                                  dataset="trade")
+                recs,
+                tier=tier.value,
+                request_id=page.record.request_id,
+                retrieved_at=page.record.received_at,
+                parser_version=PARSER_VERSION,
+                run_id=run_id,
+            )
+            self.store.add_issues(
+                issues, run_id=run_id, request_id=page.record.request_id, dataset="trade"
+            )
             cur = self.store.get_unit(uid)
             times = [r["created_time"] for r in recs]
-            earliest = min([iso(t) for t in times] + ([cur["earliest_obs"]]
-                                                      if cur["earliest_obs"] else []),
-                           default=None)
-            latest = max([iso(t) for t in times] + ([cur["latest_obs"]]
-                                                    if cur["latest_obs"] else []),
-                         default=None)
+            earliest = min(
+                [iso(t) for t in times] + ([cur["earliest_obs"]] if cur["earliest_obs"] else []),
+                default=None,
+            )
+            latest = max(
+                [iso(t) for t in times] + ([cur["latest_obs"]] if cur["latest_obs"] else []),
+                default=None,
+            )
             tiers = set(filter(None, cur["tiers_used"].split(","))) | {tier.value}
             fields: dict[str, Any] = dict(
-                pages=cur["pages"] + 1, rows_received=cur["rows_received"] + len(recs),
-                rows_new=cur["rows_new"] + new, tiers_used=",".join(sorted(tiers)),
-                earliest_obs=earliest, latest_obs=latest)
+                pages=cur["pages"] + 1,
+                rows_received=cur["rows_received"] + len(recs),
+                rows_new=cur["rows_new"] + new,
+                tiers_used=",".join(sorted(tiers)),
+                earliest_obs=earliest,
+                latest_obs=latest,
+            )
             if first_key:
                 fields["first_item_key"] = first_key
             if done and next_phase_id:
@@ -618,8 +859,9 @@ class Ingestor:
             self.store.update_unit(uid, **fields)
 
         self._persist(run_id, page.record, tier.value, len(page.items), write)
-        self.progress("page", {"dataset": "trades", "ticker": ticker,
-                               "rows": len(recs), "tier": tier.value})
+        self.progress(
+            "page", {"dataset": "trades", "ticker": ticker, "rows": len(recs), "tier": tier.value}
+        )
 
     # ------------------------------------------------------------ candles
     def _run_candle_unit(self, run_id: str, uid: int, info: MarketInfo) -> None:
@@ -629,8 +871,7 @@ class Ingestor:
         assert start is not None and end is not None
         interval = int(unit["interval_minutes"])
         with self.store.transaction():
-            self.store.update_unit(uid, status="running", attempts=unit["attempts"] + 1,
-                                   error=None)
+            self.store.update_unit(uid, status="running", attempts=unit["attempts"] + 1, error=None)
         cutoff = self.current_cutoff(run_id)
         # Candles follow the market's archival status (documented rule: markets
         # that settled before market_settled_ts are served by the historical
@@ -638,19 +879,23 @@ class Ingestor:
         # where metadata was found" as the rule: we observed markets settled just
         # before the cutoff being served by BOTH tiers during the handoff.
         tier = market_tier(info.settled, cutoff)
-        notes = []
+        fetch_start, inc_note = self._incremental_start(run_id, unit, start, end)
+        notes = [inc_note] if inc_note else []
         if info.found_tier is not tier:
-            notes.append(f"metadata served by {info.found_tier.value} tier; candles routed to "
-                         f"{tier.value} by settlement time")
-        s_ts, e_ts = to_unix(start), to_unix(end)
+            notes.append(
+                f"metadata served by {info.found_tier.value} tier; candles routed to "
+                f"{tier.value} by settlement time"
+            )
+        s_ts, e_ts = to_unix(fetch_start), to_unix(end)
         record: ResponseRecord | None = None
         for attempt in range(2):
             try:
                 series = info.series_ticker
                 if tier is Tier.LIVE and not series:
                     series = self.ensure_event(run_id, info.event_ticker)
-                record = self.client.candlesticks(tier, info.ticker, series, s_ts, e_ts - 1,
-                                                  interval)
+                record = self.client.candlesticks(
+                    tier, info.ticker, series, s_ts, e_ts - 1, interval
+                )
                 break
             except NotFoundError:
                 if attempt == 1:
@@ -658,8 +903,10 @@ class Ingestor:
                 # Bounded fallback: the market may have moved tiers during the run.
                 fresh = self.resolve_market(run_id, info.ticker)
                 other = Tier.HISTORICAL if tier is Tier.LIVE else Tier.LIVE
-                notes.append(f"404 from {tier.value} candles; retried {other.value} "
-                             f"(metadata now in {fresh.found_tier.value})")
+                notes.append(
+                    f"404 from {tier.value} candles; retried {other.value} "
+                    f"(metadata now in {fresh.found_tier.value})"
+                )
                 tier = other
                 info = fresh
         assert record is not None
@@ -668,8 +915,9 @@ class Ingestor:
         issues: list[Issue] = []
         recs: list[Record] = []
         if not isinstance(items, list):
-            issues.append(Issue("error", "malformed_response", "candlesticks list missing",
-                                info.ticker, body))
+            issues.append(
+                Issue("error", "malformed_response", "candlesticks list missing", info.ticker, body)
+            )
             items = []
         for item in items:
             rec, iss = parse_candle(item, info.ticker, interval, tier.value)
@@ -681,24 +929,43 @@ class Ingestor:
 
         def write() -> None:
             new, _rev, _same = self.store.upsert_candles(
-                recs, tier=tier.value, request_id=record.request_id,
-                retrieved_at=record.received_at, parser_version=PARSER_VERSION)
-            self.store.add_issues(issues, run_id=run_id, request_id=record.request_id,
-                                  dataset="candle")
+                recs,
+                tier=tier.value,
+                request_id=record.request_id,
+                retrieved_at=record.received_at,
+                parser_version=PARSER_VERSION,
+            )
+            self.store.add_issues(
+                issues, run_id=run_id, request_id=record.request_id, dataset="candle"
+            )
             ends = [r["end_period_time"] for r in recs]
             self.store.update_unit(
-                uid, status="complete", completed_at=utcnow(), pages=1,
-                rows_received=len(recs), rows_new=new, tiers_used=tier.value,
+                uid,
+                status="complete",
+                completed_at=utcnow(),
+                pages=1,
+                rows_received=len(recs),
+                rows_new=new,
+                tiers_used=tier.value,
                 earliest_obs=min(ends) if ends else None,
-                latest_obs=max(ends) if ends else None, note="; ".join(notes) or None)
+                latest_obs=max(ends) if ends else None,
+                note="; ".join(notes) or None,
+            )
 
         self._persist(run_id, record, tier.value, len(items), write)
-        self.progress("page", {"dataset": "candles", "ticker": info.ticker, "rows": len(recs),
-                               "tier": tier.value})
+        self.progress(
+            "page",
+            {"dataset": "candles", "ticker": info.ticker, "rows": len(recs), "tier": tier.value},
+        )
 
     # ---------------------------------------------------------- orderbook
-    def snapshot_orderbook(self, run_id: str | None, ticker: str, depth: int | None = None,
-                           notional: Decimal | None = None) -> Record:
+    def snapshot_orderbook(
+        self,
+        run_id: str | None,
+        ticker: str,
+        depth: int | None = None,
+        notional: Decimal | None = None,
+    ) -> Record:
         """Fetch and store one current order book snapshot (bids only).
 
         ``requested_at``/``received_at`` are local clock times; ``server_date``
@@ -711,24 +978,33 @@ class Ingestor:
 
         def write() -> None:
             nonlocal summary
-            self.store.add_issues(issues, run_id=run_id, request_id=record.request_id,
-                                  dataset="orderbook")
+            self.store.add_issues(
+                issues, run_id=run_id, request_id=record.request_id, dataset="orderbook"
+            )
             if levels is not None:
                 summary = self.store.insert_orderbook(
-                    snapshot_id=record.request_id, run_id=run_id, ticker=ticker,
-                    requested_at=record.requested_at, received_at=record.received_at,
-                    server_date=record.headers.get("date"), depth=depth, levels=levels,
-                    notional=notional)
+                    snapshot_id=record.request_id,
+                    run_id=run_id,
+                    ticker=ticker,
+                    requested_at=record.requested_at,
+                    received_at=record.received_at,
+                    server_date=record.headers.get("date"),
+                    depth=depth,
+                    levels=levels,
+                    notional=notional,
+                )
 
-        self._persist(run_id, record, Tier.LIVE.value, None if levels is None else len(levels),
-                      write)
+        self._persist(
+            run_id, record, Tier.LIVE.value, None if levels is None else len(levels), write
+        )
         if levels is None:
             raise KalshiDataError(f"order book for {ticker} failed validation (see issues)")
         return summary
 
     # ------------------------------------------------------------ discovery
-    def store_series_list(self, run_id: str | None, category: str | None = None,
-                          tags: str | None = None) -> list[Record]:
+    def store_series_list(
+        self, run_id: str | None, category: str | None = None, tags: str | None = None
+    ) -> list[Record]:
         """Fetch /series (optionally filtered server-side) and cache locally."""
         out: list[Record] = []
         for page in self.client.series_pages(category=category, tags=tags):
@@ -739,19 +1015,22 @@ class Ingestor:
                 if rec is not None:
                     recs.append(rec)
 
-            def write(recs: list[Record] = recs, issues: list[Issue] = issues,
-                      page: Page = page) -> None:
+            def write(
+                recs: list[Record] = recs, issues: list[Issue] = issues, page: Page = page
+            ) -> None:
                 for r in recs:
                     self.store.upsert_series(r, page.record.request_id, page.record.received_at)
-                self.store.add_issues(issues, run_id=run_id, request_id=page.record.request_id,
-                                      dataset="series")
+                self.store.add_issues(
+                    issues, run_id=run_id, request_id=page.record.request_id, dataset="series"
+                )
 
             self._persist(run_id, page.record, None, len(page.items), write)
             out.extend(recs)
         return out
 
-    def store_events(self, run_id: str | None, series_ticker: str,
-                     max_pages: int | None = None) -> list[Record]:
+    def store_events(
+        self, run_id: str | None, series_ticker: str, max_pages: int | None = None
+    ) -> list[Record]:
         """Fetch /events for a series and cache them locally."""
         out: list[Record] = []
         for page in self.client.event_pages(series_ticker=series_ticker, max_pages=max_pages):
@@ -762,14 +1041,15 @@ class Ingestor:
                 if rec is not None:
                     recs.append(rec)
 
-            def write(recs: list[Record] = recs, issues: list[Issue] = issues,
-                      page: Page = page) -> None:
+            def write(
+                recs: list[Record] = recs, issues: list[Issue] = issues, page: Page = page
+            ) -> None:
                 for r in recs:
                     self.store.upsert_event(r, page.record.request_id, page.record.received_at)
-                self.store.add_issues(issues, run_id=run_id, request_id=page.record.request_id,
-                                      dataset="event")
+                self.store.add_issues(
+                    issues, run_id=run_id, request_id=page.record.request_id, dataset="event"
+                )
 
             self._persist(run_id, page.record, None, len(page.items), write)
             out.extend(recs)
         return out
-

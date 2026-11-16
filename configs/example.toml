@@ -1,0 +1,57 @@
+# Kalshi Research Data Engine - example configuration
+#
+# Use with:   kalshi-data --config configs/example.toml collect --dry-run
+#             kalshi-data --config configs/example.toml collect
+#
+# Precedence (highest wins): CLI flags  >  KALSHI_DATA_* environment variables
+#                            >  this file  >  built-in defaults.
+# Copy this file to configs/local.toml (git-ignored) for personal settings.
+
+[api]
+# Documented production host. "https://api.elections.kalshi.com/trade-api/v2"
+# is documented as "also supported" if the first is blocked on your network.
+base_url = "https://external-api.kalshi.com/trade-api/v2"
+connect_timeout = 10.0        # seconds
+read_timeout = 30.0           # seconds
+# Request pacing: minimum seconds between request starts. This is OUR
+# conservative setting for unauthenticated access, not a Kalshi allowance
+# (Kalshi does not publish unauthenticated limits; we saw HTTP 429 on bursts).
+min_request_interval = 0.5
+# Retry policy for 429 / 5xx / network errors (other 4xx are never retried).
+max_retries = 5
+backoff_initial = 1.0         # seconds; doubles each retry, with jitter
+backoff_max = 60.0            # cap per retry, seconds
+page_limit = 1000             # items per page (Kalshi documents max 1000)
+
+[storage]
+data_dir = "data"             # SQLite database + raw responses live here
+# "keep" stores every raw API response (gzip) for audit; "none" skips them
+# (normalized rows then cannot be re-verified against the exact response).
+raw_retention = "keep"
+
+[collection]
+# Max HTTP attempts (including retries) per run. Omit for no limit. When the
+# budget is spent the run is marked "incomplete" and can be resumed.
+request_budget = 2000
+# Incremental-update overlap, seconds. A previously completed window is only
+# skipped if it was fetched at least this long after the window ended;
+# otherwise it is fetched again so late trades / revised candles are picked up.
+overlap_seconds = 3600
+# Safety guard when a job expands a series/event into markets.
+max_markets_per_series = 500
+
+[job]
+name = "sp500-range-sample"
+# Choose markets by any combination of explicit tickers, events and series.
+# Series/events are expanded into markets from BOTH live and historical tiers.
+# Tickers below are placeholders: replace them with tickers returned by
+#   kalshi-data discover --query "S&P 500"   and   kalshi-data markets --event ...
+tickers = []
+events = ["INXD-23DEC29"]     # an S&P 500 range event observed on 2026-11-16
+series = []
+# UTC, half-open [start, end). A date means midnight UTC at the start of that day.
+start = "2023-12-20"
+end = "2024-01-10"
+# Any of: "markets" (metadata), "trades", "candles", "orderbook" (current snapshot)
+datasets = ["markets", "trades", "candles"]
+candle_interval = 60          # minutes: 1, 60 or 1440

@@ -32,15 +32,38 @@ from .errors import ConfigError
 from .storage import CANDLE_VALUE_COLUMNS, MARKET_COLUMNS, Store
 from .timeutil import iso, parse_api_time, utcnow
 
-_MARKET_DEC = {"floor_strike", "cap_strike", "notional_value_dollars",
-               "settlement_value_dollars", "settlement_floor_dollars", "last_price_dollars",
-               "previous_price_dollars", "yes_bid_dollars", "yes_ask_dollars", "no_bid_dollars",
-               "no_ask_dollars", "previous_yes_bid_dollars", "previous_yes_ask_dollars",
-               "yes_bid_size_fp", "yes_ask_size_fp", "volume_fp", "volume_24h_fp",
-               "open_interest_fp"}
-_MARKET_TIME = {"created_time", "open_time", "close_time", "expected_expiration_time",
-                "latest_expiration_time", "expiration_time", "settlement_ts",
-                "occurrence_datetime", "updated_time", "fee_waiver_expiration_time"}
+_MARKET_DEC = {
+    "floor_strike",
+    "cap_strike",
+    "notional_value_dollars",
+    "settlement_value_dollars",
+    "settlement_floor_dollars",
+    "last_price_dollars",
+    "previous_price_dollars",
+    "yes_bid_dollars",
+    "yes_ask_dollars",
+    "no_bid_dollars",
+    "no_ask_dollars",
+    "previous_yes_bid_dollars",
+    "previous_yes_ask_dollars",
+    "yes_bid_size_fp",
+    "yes_ask_size_fp",
+    "volume_fp",
+    "volume_24h_fp",
+    "open_interest_fp",
+}
+_MARKET_TIME = {
+    "created_time",
+    "open_time",
+    "close_time",
+    "expected_expiration_time",
+    "latest_expiration_time",
+    "expiration_time",
+    "settlement_ts",
+    "occurrence_datetime",
+    "updated_time",
+    "fee_waiver_expiration_time",
+}
 
 # dataset -> (SQL, decimal columns, timestamp columns, time column for filtering)
 DATASETS: dict[str, tuple[str, set[str], set[str], str | None]] = {
@@ -49,20 +72,30 @@ DATASETS: dict[str, tuple[str, set[str], set[str], str | None]] = {
         "t.taker_outcome_side, t.taker_book_side, t.taker_side_deprecated, t.is_block_trade, "
         "t.tier, t.retrieved_at, t.source_request_id, r.raw_path, t.parser_version "
         "FROM trades t LEFT JOIN requests r ON r.request_id = t.source_request_id",
-        {"count", "yes_price", "no_price"}, {"created_time", "retrieved_at"}, "t.created_time"),
+        {"count", "yes_price", "no_price"},
+        {"created_time", "retrieved_at"},
+        "t.created_time",
+    ),
     "candles": (
         "SELECT c.ticker, c.interval_minutes, c.end_period_ts, c.end_period_time, "
         + ", ".join(f"c.{x}" for x in CANDLE_VALUE_COLUMNS)
         + ", c.period_complete, c.revision, c.source_schema, c.tier, c.retrieved_at, "
         "c.source_request_id, r.raw_path, c.parser_version "
         "FROM candles c LEFT JOIN requests r ON r.request_id = c.source_request_id",
-        set(CANDLE_VALUE_COLUMNS), {"end_period_time", "retrieved_at"}, "c.end_period_time"),
+        set(CANDLE_VALUE_COLUMNS),
+        {"end_period_time", "retrieved_at"},
+        "c.end_period_time",
+    ),
     "markets": (
-        "SELECT " + ", ".join(f"m.{x}" for x in MARKET_COLUMNS)
+        "SELECT "
+        + ", ".join(f"m.{x}" for x in MARKET_COLUMNS)
         + ", e.series_ticker, m.tier, m.first_seen_at, m.retrieved_at, m.source_request_id, "
         "r.raw_path FROM markets m LEFT JOIN events e ON e.event_ticker = m.event_ticker "
         "LEFT JOIN requests r ON r.request_id = m.source_request_id",
-        _MARKET_DEC, _MARKET_TIME | {"first_seen_at", "retrieved_at"}, None),
+        _MARKET_DEC,
+        _MARKET_TIME | {"first_seen_at", "retrieved_at"},
+        None,
+    ),
     "orderbook": (
         "SELECT s.snapshot_id, s.ticker, s.requested_at, s.received_at, s.server_date, "
         "l.side, l.rank, l.price, l.quantity, s.best_yes_bid, s.best_no_bid, "
@@ -70,9 +103,18 @@ DATASETS: dict[str, tuple[str, set[str], set[str], str | None]] = {
         "r.raw_path FROM orderbook_snapshots s "
         "LEFT JOIN orderbook_levels l ON l.snapshot_id = s.snapshot_id "
         "LEFT JOIN requests r ON r.request_id = s.source_request_id",
-        {"price", "quantity", "best_yes_bid", "best_no_bid", "derived_yes_ask",
-         "derived_no_ask", "derived_yes_spread"}, {"requested_at", "received_at"},
-        "s.received_at"),
+        {
+            "price",
+            "quantity",
+            "best_yes_bid",
+            "best_no_bid",
+            "derived_yes_ask",
+            "derived_no_ask",
+            "derived_yes_spread",
+        },
+        {"requested_at", "received_at"},
+        "s.received_at",
+    ),
 }
 
 
@@ -80,9 +122,15 @@ DATASETS: dict[str, tuple[str, set[str], set[str], str | None]] = {
 BOOL_COLUMNS = {"is_block_trade", "period_complete", "can_close_early", "mutually_exclusive"}
 
 
-def query_rows(store: Store, dataset: str, *, tickers: list[str] | None = None,
-               start: datetime | None = None, end: datetime | None = None,
-               interval: int | None = None) -> Iterator[dict[str, Any]]:
+def query_rows(
+    store: Store,
+    dataset: str,
+    *,
+    tickers: list[str] | None = None,
+    start: datetime | None = None,
+    end: datetime | None = None,
+    interval: int | None = None,
+) -> Iterator[dict[str, Any]]:
     """Stream rows (raw SQLite representation) for a dataset with filters.
 
     ``start``/``end`` form a half-open UTC range on the dataset's time column
@@ -108,10 +156,12 @@ def query_rows(store: Store, dataset: str, *, tickers: list[str] | None = None,
         args.append(interval)
     if where:
         sql += " WHERE " + " AND ".join(where)
-    order = {"trades": " ORDER BY t.ticker, t.created_time, t.trade_id",
-             "candles": " ORDER BY c.ticker, c.interval_minutes, c.end_period_ts",
-             "markets": " ORDER BY m.ticker",
-             "orderbook": " ORDER BY s.ticker, s.received_at, l.side, l.rank"}[dataset]
+    order = {
+        "trades": " ORDER BY t.ticker, t.created_time, t.trade_id",
+        "candles": " ORDER BY c.ticker, c.interval_minutes, c.end_period_ts",
+        "markets": " ORDER BY m.ticker",
+        "orderbook": " ORDER BY s.ticker, s.received_at, l.side, l.rank",
+    }[dataset]
     cur = store.conn.execute(sql + order, args)
     cols = [d[0] for d in cur.description]
     for row in cur:
@@ -143,11 +193,15 @@ def export(store: Store, dataset: str, output: Path, fmt: str, **filters: Any) -
     else:
         n = _write_parquet(list(rows), output, dataset)
     meta = {
-        "dataset": dataset, "format": fmt, "rows": n, "generated_at": iso(utcnow()),
-        "database": str(store.path), "engine_version": __version__,
+        "dataset": dataset,
+        "format": fmt,
+        "rows": n,
+        "generated_at": iso(utcnow()),
+        "database": str(store.path),
+        "engine_version": __version__,
         "filters": {k: (iso(v) if isinstance(v, datetime) else v) for k, v in filters.items()},
         "notes": "Decimals exact; NULL = not supplied by API (empty in CSV). See "
-                 "docs/data_dictionary.md.",
+        "docs/data_dictionary.md.",
     }
     Path(str(output) + ".meta.json").write_text(json.dumps(meta, indent=2), encoding="utf-8")
     return n

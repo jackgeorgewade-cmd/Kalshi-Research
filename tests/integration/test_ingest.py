@@ -28,30 +28,46 @@ from kalshi_data.timeutil import utcnow
 S, E = datetime(2026, 9, 1, tzinfo=UTC), datetime(2026, 10, 1, tzinfo=UTC)
 
 
-def job(tickers: list[str], datasets: list[str], start: datetime = S,
-        end: datetime = E, interval: int = 60) -> JobRequest:
-    return JobRequest(kind="test", start=start, end=end, datasets=datasets, tickers=tickers,
-                      candle_interval=interval)
+def job(
+    tickers: list[str],
+    datasets: list[str],
+    start: datetime = S,
+    end: datetime = E,
+    interval: int = 60,
+) -> JobRequest:
+    return JobRequest(
+        kind="test",
+        start=start,
+        end=end,
+        datasets=datasets,
+        tickers=tickers,
+        candle_interval=interval,
+    )
 
 
 def setup_markets(fake: FakeKalshi) -> None:
     # LIVEM: settles after the cutoff -> live metadata/candles; trades span both tiers.
     fake.add_market(market("LIVEM", "EV1", created="2026-09-01T00:00:00Z"))
-    fake.hist_trades += [trade(f"h{i}", "LIVEM", ts("2026-09-10T00:00:00Z") + i * 60)
-                         for i in range(5)]
+    fake.hist_trades += [
+        trade(f"h{i}", "LIVEM", ts("2026-09-10T00:00:00Z") + i * 60) for i in range(5)
+    ]
     boundary = trade("edge", "LIVEM", CUTOFF_TS)  # exactly at the cutoff, served by both
     fake.hist_trades.append(boundary)
     fake.live_trades += [dict(boundary)] + [
         trade(f"l{i}", "LIVEM", ts("2026-09-20T00:00:00Z") + i * 60, "0.5000", "2.50")
-        for i in range(5)]
+        for i in range(5)
+    ]
     # Candles before AND after the trade cutoff, all served by the live endpoint.
-    fake.live_candles[("LIVEM", 60)] = [live_candle(ts("2026-09-10T01:00:00Z")),
-                                        live_candle(ts("2026-09-20T01:00:00Z"), None, "0.00")]
+    fake.live_candles[("LIVEM", 60)] = [
+        live_candle(ts("2026-09-10T01:00:00Z")),
+        live_candle(ts("2026-09-20T01:00:00Z"), None, "0.00"),
+    ]
     # ARCH: settled before the cutoff -> historical metadata/candles/trades only.
-    fake.add_market(market("ARCH", "EV0", created="2026-09-01T00:00:00Z",
-                           settled="2026-09-05T00:00:00Z"), historical=True)
-    fake.hist_trades += [trade(f"a{i}", "ARCH", ts("2026-09-02T00:00:00Z") + i)
-                         for i in range(3)]
+    fake.add_market(
+        market("ARCH", "EV0", created="2026-09-01T00:00:00Z", settled="2026-09-05T00:00:00Z"),
+        historical=True,
+    )
+    fake.hist_trades += [trade(f"a{i}", "ARCH", ts("2026-09-02T00:00:00Z") + i) for i in range(3)]
     fake.hist_candles[("ARCH", 60)] = [hist_candle(ts("2026-09-02T01:00:00Z"))]
 
 
@@ -87,8 +103,8 @@ def test_candles_routed_by_market_archival_not_candle_date(engine: Engine) -> No
     assert count(engine, "SELECT COUNT(*) FROM candles WHERE ticker='LIVEM'") == 2
     assert rows["ARCH"]["source_schema"] == "historical"
     no_trade = engine.store.conn.execute(
-        "SELECT trade_close, volume FROM candles WHERE ticker='LIVEM' ORDER BY end_period_ts "
-        "DESC").fetchone()
+        "SELECT trade_close, volume FROM candles WHERE ticker='LIVEM' ORDER BY end_period_ts DESC"
+    ).fetchone()
     assert no_trade["trade_close"] is None and no_trade["volume"] == "0.00"
 
 
@@ -101,8 +117,9 @@ def test_candle_404_falls_back_to_other_tier_once(engine: Engine) -> None:
             m = f.live_markets.pop("LIVEM")  # market archived mid-run
             m.update(status="finalized", settlement_ts="2026-09-30T00:00:00Z")
             f.hist_markets["LIVEM"] = m
-            f.hist_candles[("LIVEM", 60)] = [hist_candle(c["end_period_ts"])
-                                             for c in f.live_candles[("LIVEM", 60)]]
+            f.hist_candles[("LIVEM", 60)] = [
+                hist_candle(c["end_period_ts"]) for c in f.live_candles[("LIVEM", 60)]
+            ]
         return None
 
     f.hooks.append(move_on_candles)
@@ -152,8 +169,9 @@ def test_invalid_cursor_restarts_bounded_phase(tmp_path: Path, fake: FakeKalshi)
     def reject(path: str, params: dict[str, str]) -> httpx.Response | None:
         if path == "/historical/trades" and params.get("cursor") == "c2" and not state["done"]:
             state["done"] = True
-            return httpx.Response(400, json={"error": {"code": "bad_request",
-                                                       "message": "invalid cursor"}})
+            return httpx.Response(
+                400, json={"error": {"code": "bad_request", "message": "invalid cursor"}}
+            )
         return None
 
     fake.hooks.append(reject)
@@ -165,8 +183,7 @@ def test_invalid_cursor_restarts_bounded_phase(tmp_path: Path, fake: FakeKalshi)
     eng.close()
 
 
-def test_budget_exhaustion_is_incomplete_then_resumable(tmp_path: Path,
-                                                        fake: FakeKalshi) -> None:
+def test_budget_exhaustion_is_incomplete_then_resumable(tmp_path: Path, fake: FakeKalshi) -> None:
     setup_markets(fake)
     eng = make_engine(tmp_path, fake, budget=5, page_limit=2)
     res = eng.ingestor.run(job(["LIVEM"], ["trades"]))
@@ -176,8 +193,7 @@ def test_budget_exhaustion_is_incomplete_then_resumable(tmp_path: Path,
     eng2 = make_engine(tmp_path, fake, page_limit=2)
     row = eng2.store.get_run(res.run_id)
     assert row is not None
-    res2 = eng2.ingestor.run(JobRequest.from_json(json.loads(row["spec_json"])),
-                             run_id=res.run_id)
+    res2 = eng2.ingestor.run(JobRequest.from_json(json.loads(row["spec_json"])), run_id=res.run_id)
     assert res2.status == "completed"
     assert count(eng2, "SELECT COUNT(*) FROM trades") == 11
     eng2.close()
@@ -216,19 +232,25 @@ def test_rerun_skips_final_windows_and_refetches_recent(engine: Engine) -> None:
     # A window that reaches into the future is never final: re-fetched, candle revised.
     now = utcnow().replace(minute=0, second=0, microsecond=0)
     engine.fake.live_candles[("LIVEM", 60)] = [live_candle(int(now.timestamp()), "0.4000")]
-    recent = job(["LIVEM"], ["candles"], start=now - timedelta(hours=2),
-                 end=now + timedelta(days=1))
+    recent = job(
+        ["LIVEM"], ["candles"], start=now - timedelta(hours=2), end=now + timedelta(days=1)
+    )
     engine.ingestor.run(recent)
     engine.fake.live_candles[("LIVEM", 60)] = [live_candle(int(now.timestamp()), "0.4600")]
     r4 = engine.ingestor.run(recent)
     assert r4.units == {"complete": 1}
+    note = engine.store.conn.execute(
+        "SELECT note FROM work_units WHERE run_id=?", (r4.run_id,)
+    ).fetchone()["note"]
+    assert "incremental update" in note
     row = engine.store.conn.execute("SELECT * FROM candles WHERE trade_close='0.4600'").fetchone()
     assert row["revision"] == 2
     assert count(engine, "SELECT COUNT(*) FROM candle_revisions") == 1
 
 
-def test_crash_between_raw_write_and_commit(tmp_path: Path, fake: FakeKalshi,
-                                           monkeypatch: pytest.MonkeyPatch) -> None:
+def test_crash_between_raw_write_and_commit(
+    tmp_path: Path, fake: FakeKalshi, monkeypatch: pytest.MonkeyPatch
+) -> None:
     setup_markets(fake)
     eng = make_engine(tmp_path, fake)
     original = eng.store.insert_trades
@@ -247,8 +269,7 @@ def test_crash_between_raw_write_and_commit(tmp_path: Path, fake: FakeKalshi,
     assert len(orphans) == 1 and read_envelope(orphans[0])["path"] == "/historical/trades"
     monkeypatch.setattr(eng.store, "insert_trades", original)
     run = eng.store.list_runs()[0]
-    res = eng.ingestor.run(JobRequest.from_json(json.loads(run["spec_json"])),
-                           run_id=run["run_id"])
+    res = eng.ingestor.run(JobRequest.from_json(json.loads(run["spec_json"])), run_id=run["run_id"])
     assert res.status == "completed" and count(eng, "SELECT COUNT(*) FROM trades") == 3
     eng.close()
 
@@ -280,7 +301,8 @@ def test_provenance_chain_from_row_to_raw_file(engine: Engine) -> None:
     engine.ingestor.run(job(["ARCH"], ["markets", "trades"]))
     row = engine.store.conn.execute(
         "SELECT t.trade_id, r.raw_path, r.sha256 FROM trades t JOIN requests r "
-        "ON r.request_id = t.source_request_id LIMIT 1").fetchone()
+        "ON r.request_id = t.source_request_id LIMIT 1"
+    ).fetchone()
     env = read_envelope(engine.settings.storage.raw_dir / row["raw_path"])
     assert env["sha256"] == row["sha256"]
     assert row["trade_id"] in env["body"]
@@ -295,16 +317,20 @@ def test_malformed_record_quarantined_not_dropped(engine: Engine) -> None:
     engine.fake.hist_trades.append(bad)
     engine.ingestor.run(job(["ARCH"], ["trades"]))
     issue = engine.store.conn.execute(
-        "SELECT * FROM validation_issues WHERE severity='error'").fetchone()
+        "SELECT * FROM validation_issues WHERE severity='error'"
+    ).fetchone()
     assert issue["record_key"] == "bad" and "NaN-ish" in issue["raw_json"]
     assert count(engine, "SELECT COUNT(*) FROM trades WHERE trade_id='bad'") == 0
 
 
 def test_orderbook_snapshot_and_derived_fields(engine: Engine) -> None:
     setup_markets(engine.fake)
-    engine.fake.orderbooks["LIVEM"] = {"orderbook_fp": {
-        "yes_dollars": [["0.4100", "5.00"], ["0.4200", "1.25"]],
-        "no_dollars": [["0.5500", "3.00"]]}}
+    engine.fake.orderbooks["LIVEM"] = {
+        "orderbook_fp": {
+            "yes_dollars": [["0.4100", "5.00"], ["0.4200", "1.25"]],
+            "no_dollars": [["0.5500", "3.00"]],
+        }
+    }
     snap = engine.ingestor.snapshot_orderbook(None, "LIVEM")
     assert str(snap["best_yes_bid"]) == "0.4200"
     assert str(snap["derived_yes_ask"]) == "0.4500"
@@ -316,8 +342,7 @@ def test_orderbook_snapshot_and_derived_fields(engine: Engine) -> None:
 def test_market_in_both_tiers_routes_candles_by_settlement(engine: Engine) -> None:
     # Observed live: markets settled just before the cutoff are served by both tiers.
     f = engine.fake
-    m = market("OVERLAP", "EV3", created="2026-09-10T00:00:00Z",
-               settled="2026-09-16T23:00:00Z")
+    m = market("OVERLAP", "EV3", created="2026-09-10T00:00:00Z", settled="2026-09-16T23:00:00Z")
     f.add_market(m)
     f.add_market(dict(m), historical=True)
     f.hist_candles[("OVERLAP", 60)] = [hist_candle(ts("2026-09-16T12:00:00Z"))]
@@ -328,3 +353,29 @@ def test_market_in_both_tiers_routes_candles_by_settlement(engine: Engine) -> No
     assert candle_paths == ["/historical/markets/OVERLAP/candlesticks"]
     unit = engine.store.conn.execute("SELECT * FROM work_units").fetchone()
     assert unit["tiers_used"] == "historical" and "settlement time" in unit["note"]
+
+
+def test_incremental_update_refetches_only_overlap(engine: Engine) -> None:
+    f = engine.fake
+    now = utcnow()
+    f.add_market(market("RECENT", "EV4", created=(now - timedelta(days=20)).isoformat()))
+    f.live_trades += [
+        trade(f"r{i}", "RECENT", (now - timedelta(days=i)).timestamp()) for i in range(1, 10)
+    ]
+    month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    r1 = engine.ingestor.run(job(["RECENT"], ["trades"], start=month_start, end=now))
+    assert r1.status == "completed"
+    f.calls.clear()
+    f.live_trades.append(trade("late", "RECENT", (now + timedelta(seconds=1)).timestamp()))
+    r2 = engine.ingestor.run(
+        job(["RECENT"], ["trades"], start=month_start, end=now + timedelta(minutes=5))
+    )
+    assert r2.status == "completed"
+    q = next(q for p, q in f.calls if p == "/markets/trades")
+    overlap = engine.settings.collection.overlap_seconds
+    assert int(q["min_ts"]) >= int(now.timestamp()) - overlap - 2  # only the overlap
+    unit = engine.store.conn.execute(
+        "SELECT note FROM work_units WHERE run_id=?", (r2.run_id,)
+    ).fetchone()
+    assert "incremental update" in unit["note"]
+    assert count(engine, "SELECT COUNT(*) FROM trades WHERE trade_id='late'") == 1

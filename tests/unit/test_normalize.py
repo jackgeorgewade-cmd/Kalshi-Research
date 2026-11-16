@@ -56,8 +56,9 @@ def test_trade_zero_price_kept_as_zero_with_mismatch_check() -> None:
 
 def test_market_strikes_decimal_and_distinct_times() -> None:
     body = loads_exact(
-        b'{"market": %s}' % __import__("json").dumps(
-            market("M", "E", settled="2026-09-16T23:01:48.444806Z")).encode())
+        b'{"market": %s}'
+        % __import__("json").dumps(market("M", "E", settled="2026-09-16T23:01:48.444806Z")).encode()
+    )
     rec, _issues = parse_market(body["market"])
     assert rec is not None
     assert rec["cap_strike"] == Decimal("7899.9999")
@@ -77,8 +78,14 @@ def test_live_and_historical_candle_adapters_agree() -> None:
     a, ia = parse_candle(live_candle(3600, "0.4200", "2.50"), "M", 60, "live")
     b, ib = parse_candle(hist_candle(3600, "0.4200", "2.50"), "M", 60, "historical")
     assert a is not None and b is not None and not ia and not ib
-    for k in ("trade_close", "yes_bid_open", "yes_ask_close", "volume", "open_interest",
-              "trade_previous"):
+    for k in (
+        "trade_close",
+        "yes_bid_open",
+        "yes_ask_close",
+        "volume",
+        "open_interest",
+        "trade_previous",
+    ):
         assert a[k] == b[k], k
     assert a["trade_close"] == Decimal("0.4200")
     assert a["yes_bid_close"] == Decimal("0.4100") and a["yes_ask_close"] == Decimal("0.4300")
@@ -103,8 +110,12 @@ def test_candle_bad_end_ts_quarantined() -> None:
 
 
 def test_orderbook_levels_ranked_best_first() -> None:
-    body = {"orderbook_fp": {"yes_dollars": [["0.4100", "5.00"], ["0.4200", "1.50"]],
-                             "no_dollars": [["0.5600", "2.00"]]}}
+    body = {
+        "orderbook_fp": {
+            "yes_dollars": [["0.4100", "5.00"], ["0.4200", "1.50"]],
+            "no_dollars": [["0.5600", "2.00"]],
+        }
+    }
     levels, issues = parse_orderbook(body, "M")
     assert levels is not None and not issues
     best_yes = next(lv for lv in levels if lv["side"] == "yes" and lv["rank"] == 1)
@@ -112,6 +123,7 @@ def test_orderbook_levels_ranked_best_first() -> None:
 
 
 def test_orderbook_malformed_level() -> None:
-    levels, issues = parse_orderbook({"orderbook_fp": {"yes_dollars": [["0.4"]],
-                                                       "no_dollars": []}}, "M")
+    levels, issues = parse_orderbook(
+        {"orderbook_fp": {"yes_dollars": [["0.4"]], "no_dollars": []}}, "M"
+    )
     assert levels is None and issues[0].severity == "error"

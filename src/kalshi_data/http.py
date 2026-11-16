@@ -50,8 +50,15 @@ log = logging.getLogger("kalshi_data.http")
 
 RETRYABLE_STATUS = frozenset({429, 500, 502, 503, 504})
 # Response headers worth keeping for provenance (none of them are secret).
-KEPT_HEADERS = ("date", "cache-control", "x-cache", "x-ratelimit-limit",
-                "x-ratelimit-remaining", "x-ratelimit-reset", "x-ratelimit-cost")
+KEPT_HEADERS = (
+    "date",
+    "cache-control",
+    "x-cache",
+    "x-ratelimit-limit",
+    "x-ratelimit-remaining",
+    "x-ratelimit-reset",
+    "x-ratelimit-cost",
+)
 
 
 class RequestBudget:
@@ -170,8 +177,9 @@ def _error_from_response(status: int, path: str, body: bytes) -> APIError:
         cls = ServerError
     else:
         cls = APIError
-    return cls(status, path, code=code, message=message,
-               details=None if details is None else str(details))
+    return cls(
+        status, path, code=code, message=message, details=None if details is None else str(details)
+    )
 
 
 class Transport:
@@ -201,8 +209,10 @@ class Transport:
         self._client = client or httpx.Client(
             base_url=settings.base_url,
             timeout=httpx.Timeout(settings.read_timeout, connect=settings.connect_timeout),
-            headers={"User-Agent": f"kalshi-data-research/{__version__}",
-                     "Accept": "application/json"},
+            headers={
+                "User-Agent": f"kalshi-data-research/{__version__}",
+                "Accept": "application/json",
+            },
             limits=httpx.Limits(max_keepalive_connections=4, max_connections=4),
         )
 
@@ -229,8 +239,7 @@ class Transport:
     def _delay(self, attempt: int, retry_after: float | None) -> float:
         if retry_after is not None:
             return min(retry_after, 300.0)
-        base = min(self.settings.backoff_max,
-                   self.settings.backoff_initial * (2 ** (attempt - 1)))
+        base = min(self.settings.backoff_max, self.settings.backoff_initial * (2 ** (attempt - 1)))
         return float(base * self._rng.uniform(0.5, 1.0))
 
     def get(self, path: str, params: Mapping[str, Any] | None = None) -> ResponseRecord:
@@ -265,8 +274,13 @@ class Transport:
                         f"{type(exc).__name__} for {path} after {attempt} attempts: {exc}"
                     ) from exc
                 delay = self._delay(attempt, None)
-                log.warning("Network error on %s (%s); retry %d in %.1fs",
-                            path, type(exc).__name__, attempt, delay)
+                log.warning(
+                    "Network error on %s (%s); retry %d in %.1fs",
+                    path,
+                    type(exc).__name__,
+                    attempt,
+                    delay,
+                )
                 self.stats.retries += 1
                 self._sleep(delay)
                 continue
@@ -274,18 +288,25 @@ class Transport:
             if 200 <= resp.status_code < 300:
                 headers = {k: resp.headers[k] for k in KEPT_HEADERS if k in resp.headers}
                 return ResponseRecord(
-                    request_id=request_id, path=path, params=sent,
-                    url=str(resp.request.url), status=resp.status_code,
-                    requested_at=requested_at, received_at=received_at,
-                    body=resp.content, headers=headers, attempts=attempt,
+                    request_id=request_id,
+                    path=path,
+                    params=sent,
+                    url=str(resp.request.url),
+                    status=resp.status_code,
+                    requested_at=requested_at,
+                    received_at=received_at,
+                    body=resp.content,
+                    headers=headers,
+                    attempts=attempt,
                 )
             if resp.status_code == 429:
                 self.stats.rate_limited += 1
             if resp.status_code in RETRYABLE_STATUS and attempt <= self.settings.max_retries:
                 retry_after = _parse_retry_after(resp.headers.get("retry-after"))
                 delay = self._delay(attempt, retry_after)
-                log.warning("HTTP %d on %s; retry %d in %.1fs",
-                            resp.status_code, path, attempt, delay)
+                log.warning(
+                    "HTTP %d on %s; retry %d in %.1fs", resp.status_code, path, attempt, delay
+                )
                 self.stats.retries += 1
                 self._sleep(delay)
                 continue

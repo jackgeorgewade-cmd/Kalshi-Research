@@ -23,8 +23,14 @@ from kalshi_data.storage import Store
 
 def make_settings(data_dir: Path, **api: object) -> Settings:
     over: dict[str, dict[str, object]] = {
-        "api": {"base_url": BASE, "min_request_interval": 0.0, "backoff_initial": 0.01,
-                "backoff_max": 0.02, "max_retries": 2, **api},
+        "api": {
+            "base_url": BASE,
+            "min_request_interval": 0.0,
+            "backoff_initial": 0.01,
+            "backoff_max": 0.02,
+            "max_retries": 2,
+            **api,
+        },
         "storage": {"data_dir": str(data_dir)},
     }
     return load_config(overrides=over, env={}).settings
@@ -45,13 +51,15 @@ class Engine:
         self.store.close()
 
 
-def make_engine(tmp_path: Path, fake: FakeKalshi, budget: int | None = None,
-                **api: object) -> Engine:
+def make_engine(
+    tmp_path: Path, fake: FakeKalshi, budget: int | None = None, **api: object
+) -> Engine:
     settings = make_settings(tmp_path / "data", **api)
     sleeps: list[float] = []
     http = httpx.Client(base_url=settings.api.base_url, transport=fake.transport())
-    transport = Transport(settings.api, budget=RequestBudget(budget), client=http,
-                          sleep=sleeps.append)
+    transport = Transport(
+        settings.api, budget=RequestBudget(budget), client=http, sleep=sleeps.append
+    )
     client = KalshiClient(transport, settings.api.page_limit)
     store = Store(settings.storage.db_path)
     ing = Ingestor(settings, store, RawStore(settings.storage.raw_dir), client)

@@ -116,14 +116,13 @@ class KalshiClient:
         return self.transport.get("/exchange/status")
 
     # ---- series / events ----------------------------------------------
-    def series_pages(
-        self, category: str | None = None, tags: str | None = None
-    ) -> Iterator[Page]:
+    def series_pages(self, category: str | None = None, tags: str | None = None) -> Iterator[Page]:
         """GET /series. Observed live: returns every matching series in one
         response without a cursor; cursors are still followed if present."""
         params = {"category": category, "tags": tags}
-        return paginate(self.transport, "/series", params, "series",
-                        identity=lambda s: str(s.get("ticker")))
+        return paginate(
+            self.transport, "/series", params, "series", identity=lambda s: str(s.get("ticker"))
+        )
 
     def series(self, series_ticker: str) -> ResponseRecord:
         """GET /series/{series_ticker}."""
@@ -137,8 +136,14 @@ class KalshiClient:
     ) -> Iterator[Page]:
         """GET /events (limit max 200). Events are never archived."""
         params = {"series_ticker": series_ticker, "status": status, "limit": 200}
-        return paginate(self.transport, "/events", params, "events", max_pages=max_pages,
-                        identity=lambda e: str(e.get("event_ticker")))
+        return paginate(
+            self.transport,
+            "/events",
+            params,
+            "events",
+            max_pages=max_pages,
+            identity=lambda e: str(e.get("event_ticker")),
+        )
 
     def event(self, event_ticker: str) -> ResponseRecord:
         """GET /events/{event_ticker} (markets returned top-level; archived
@@ -174,8 +179,14 @@ class KalshiClient:
         if tier is Tier.HISTORICAL and n_filters > 1:
             raise ValueError("/historical/markets filters are mutually exclusive")
         path = "/markets" if tier is Tier.LIVE else "/historical/markets"
-        return paginate(self.transport, path, params, "markets", max_pages=max_pages,
-                        identity=lambda m: str(m.get("ticker")))
+        return paginate(
+            self.transport,
+            path,
+            params,
+            "markets",
+            max_pages=max_pages,
+            identity=lambda m: str(m.get("ticker")),
+        )
 
     def market(self, tier: Tier, ticker: str) -> ResponseRecord:
         """GET /markets/{ticker} or /historical/markets/{ticker} (404 if absent)."""
@@ -200,10 +211,16 @@ class KalshiClient:
         and filter locally to the exact half-open window. Results are newest first.
         """
         path = "/markets/trades" if tier is Tier.LIVE else "/historical/trades"
-        params = {"ticker": ticker, "min_ts": min_ts, "max_ts": max_ts,
-                  "limit": self.page_limit}
-        return paginate(self.transport, path, params, "trades", start_cursor=start_cursor,
-                        max_pages=max_pages, identity=lambda t: str(t.get("trade_id")))
+        params = {"ticker": ticker, "min_ts": min_ts, "max_ts": max_ts, "limit": self.page_limit}
+        return paginate(
+            self.transport,
+            path,
+            params,
+            "trades",
+            start_cursor=start_cursor,
+            max_pages=max_pages,
+            identity=lambda t: str(t.get("trade_id")),
+        )
 
     # ---- candlesticks --------------------------------------------------
     def candlesticks(
@@ -228,7 +245,8 @@ class KalshiClient:
             if not series_ticker:
                 raise ValueError("live candlesticks require the market's series ticker")
             return self.transport.get(
-                f"/series/{series_ticker}/markets/{ticker}/candlesticks", params)
+                f"/series/{series_ticker}/markets/{ticker}/candlesticks", params
+            )
         return self.transport.get(f"/historical/markets/{ticker}/candlesticks", params)
 
     # ---- order book ----------------------------------------------------

@@ -59,8 +59,9 @@ def market_tier(settlement_ts: datetime | None, cutoff: Cutoff) -> Tier:
     return Tier.LIVE
 
 
-def split_trade_window(start: datetime, end: datetime,
-                       cutoff: Cutoff) -> list[tuple[Tier, datetime, datetime]]:
+def split_trade_window(
+    start: datetime, end: datetime, cutoff: Cutoff
+) -> list[tuple[Tier, datetime, datetime]]:
     """Split ``[start, end)`` at the trade cutoff into tier segments (historical first)."""
     c = cutoff.trades_created
     parts: list[tuple[Tier, datetime, datetime]] = []
@@ -82,8 +83,9 @@ def trade_cells(start: datetime, end: datetime) -> list[tuple[datetime, datetime
     return cells
 
 
-def candle_cells(start: datetime, end: datetime,
-                 interval_minutes: int) -> list[tuple[datetime, datetime]]:
+def candle_cells(
+    start: datetime, end: datetime, interval_minutes: int
+) -> list[tuple[datetime, datetime]]:
     """Epoch-aligned cells of at most 5,000 periods covering ``[start, end)``.
 
     A candle belongs to the cell whose half-open range contains its
@@ -104,8 +106,9 @@ def candle_cells(start: datetime, end: datetime,
     return cells
 
 
-def clip_to_market_life(start: datetime, end: datetime, created: datetime | None,
-                        settled: datetime | None) -> tuple[datetime, datetime] | None:
+def clip_to_market_life(
+    start: datetime, end: datetime, created: datetime | None, settled: datetime | None
+) -> tuple[datetime, datetime] | None:
     """Clip a request to ``[created_time, settlement_ts + 1 day)``.
 
     No trade or candle can precede market creation, and none can follow
